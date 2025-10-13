@@ -7,7 +7,7 @@ class Stroke {
   final Color color;
   final double width;
   final bool erase;
-  final StrokeType type;
+  StrokeType type;
 
   Stroke({
     required this.color,

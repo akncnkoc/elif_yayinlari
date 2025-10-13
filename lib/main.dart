@@ -1,25 +1,80 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:window_manager/window_manager.dart';
+import 'package:screen_retriever/screen_retriever.dart';
 import 'login_page.dart';
 import 'folder_homepage.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const MyApp());
+
+  SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.immersiveSticky,
+    overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
+  );
+
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarIconBrightness: Brightness.dark,
+    ),
+  );
+  if (Platform.isWindows) {
+    await windowManager.ensureInitialized();
+  }
+
+  if (Platform.isWindows) {
+    final primaryDisplay = await screenRetriever.getPrimaryDisplay();
+
+    final scaledWidth = primaryDisplay.size.width;
+    final scaledHeight = primaryDisplay.size.height;
+
+    final windowWidth = scaledWidth / 2;
+    final windowHeight = scaledHeight * 0.8;
+
+    WindowOptions windowOptions = WindowOptions(
+      size: Size(windowWidth, windowHeight),
+      minimumSize: Size(windowWidth * 0.8, windowHeight * 0.8),
+      center: true,
+      backgroundColor: Colors.transparent,
+      titleBarStyle: TitleBarStyle.normal,
+      alwaysOnTop: false,
+      windowButtonVisibility: true,
+      fullScreen: false,
+    );
+
+    windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  }
+  runApp(const AkilliTahtaProjeDemo());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class AkilliTahtaProjeDemo extends StatelessWidget {
+  const AkilliTahtaProjeDemo({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Premium color palette
-    const primaryColor = Color(0xFF5B4CE6); // Modern purple
-    const secondaryColor = Color(0xFFFF6B6B); // Coral accent
+    const primaryColor = Color(0xFF5B4CE6);
+    const secondaryColor = Color(0xFFFF6B6B);
     const surfaceColor = Color(0xFFFFFFFF);
     const backgroundColor = Color(0xFFF8F9FD);
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      // Fix text scaling issue
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(1.0)),
+          child: child!,
+        );
+      },
       theme: ThemeData(
         useMaterial3: true,
         fontFamily: 'SF Pro Display',
@@ -35,8 +90,6 @@ class MyApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: backgroundColor,
         dividerColor: const Color(0xFFE8EAF0),
-
-        // Premium AppBar
         appBarTheme: AppBarTheme(
           elevation: 0,
           scrolledUnderElevation: 0,
@@ -53,20 +106,16 @@ class MyApp extends StatelessWidget {
           iconTheme: const IconThemeData(color: Color(0xFF1A1D29), size: 24),
           shadowColor: Colors.black.withValues(alpha: 0.03),
         ),
-
-        // Premium Cards
         cardTheme: CardThemeData(
           elevation: 0,
           color: surfaceColor,
           surfaceTintColor: surfaceColor,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: const Color(0xFFE8EAF0), width: 1.5),
+            side: const BorderSide(color: Color(0xFFE8EAF0), width: 1.5),
           ),
           shadowColor: Colors.black.withValues(alpha: 0.04),
         ),
-
-        // Premium Buttons
         filledButtonTheme: FilledButtonThemeData(
           style: FilledButton.styleFrom(
             backgroundColor: primaryColor,
@@ -84,7 +133,6 @@ class MyApp extends StatelessWidget {
             ),
           ),
         ),
-
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             backgroundColor: const Color(0xFFF1F3F9),
@@ -102,15 +150,12 @@ class MyApp extends StatelessWidget {
             ),
           ),
         ),
-
         iconButtonTheme: IconButtonThemeData(
           style: IconButton.styleFrom(
             foregroundColor: const Color(0xFF6B7280),
             hoverColor: const Color(0xFFF1F3F9),
           ),
         ),
-
-        // Premium Slider
         sliderTheme: SliderThemeData(
           activeTrackColor: primaryColor,
           inactiveTrackColor: const Color(0xFFE8EAF0),
@@ -119,8 +164,6 @@ class MyApp extends StatelessWidget {
           trackHeight: 4,
           thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
         ),
-
-        // Premium Dialog
         dialogTheme: DialogThemeData(
           backgroundColor: surfaceColor,
           elevation: 8,
@@ -135,15 +178,11 @@ class MyApp extends StatelessWidget {
             letterSpacing: -0.3,
           ),
         ),
-
-        // Premium ListTile
         listTileTheme: const ListTileThemeData(
           selectedColor: primaryColor,
           iconColor: Color(0xFF6B7280),
           contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         ),
-
-        // Premium Input
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: const Color(0xFFF1F3F9),
@@ -164,8 +203,6 @@ class MyApp extends StatelessWidget {
             vertical: 16,
           ),
         ),
-
-        // Premium SnackBar
         snackBarTheme: SnackBarThemeData(
           backgroundColor: const Color(0xFF1A1D29),
           contentTextStyle: const TextStyle(
@@ -195,6 +232,9 @@ class _LoginGateState extends State<LoginGate> {
   bool _loggedIn = false;
   String? _dropboxToken;
 
+  static const String dropboxAccessToken =
+      'sl.u.AGCYQDJBQrctX9RKYGUYDYYyesNrnxDrziGzCcgUIDmjW4yFQV86r6CtGxkrhLsI8PK32VhJi8gPQU2myifxUCsJqDEy4LM7jYhoEhF8SCao9HLj-skCuPQG6QjKSfeCIEh20ta4BCSV8e8Iwez_1k9vWzMEN0yTO7jbfl_FhPlyINTTcLG80oRW7Ad9vro1TL1CUmTBX4GTzvLg2ZrsBXI9IO9v4o-P4Z5tCBD5nN5-6NFgWvJ9WwiJK83FYbv-w3IouhQDsLn0ng1-SBPePlay56TQVgIL_LIoGYO84Qk7vbP-r05234bAw_iW3FzCdkBANSFmKPz_cUpb_38dnnW5XyzgGBPCg4qQoQol5LG3DQg8rrUiF2wqYjIbzQsnhp8F9zQhKz3OVM1yRuI9glNdhObqDTX_1gqFLZ50_SBLRa4tDt_vbYgCUPTZXl5nKWmTItZ4TxgccANcORu-gokAy-sRaaqOcTVrvZDVhbb0ZovtVnWX3ivxZyeHgYtPi-o9kdppHDIu_nFKhGaCxFgQMFt5OdNWat9FNycPaVamP-7tviBhVqHaskoyqy2_0KUBqsFVuGjr15uGUJU6CwBz7xI2JZUs4qqU3o6-8Hw4hDo2xAB1jFqCZMDY5gZZC1RnEjCwONKNbGVbgD0fuux_dE-oXxoFlEVvQuNFlOe2564Vg9FyRG2OtPqLdXwKCenlfK2WCOzITa0hqm6aZjyYJdeeAZ5LY8E4l6UN7ckSm8Bm8j02e277fbCXWvk9QUL1V4keauvJTH-r7KFdMOehgvU_0KQWaBzd2QzR6rzxzyJ1f47aupdaPh3EKwvt3094FogxQpE_47ycIgYKlCeSjTvxALB6h0yuqFBmqQNwLEe42eYGFkv1ydOn7hDtqBZSe1DE2jtm_h9w364pOAqegosroCSq7JPIwzRkik-UlrwRthHZm-HULgai0fWdv04dtdjNOWuXWHeq2i3u4kOnl4Yqlg5E6B_Q2czsJcmzC6yXpW-dOn9tTaD5k5Qh3X2hzNmvOriM4DGsLPyG4GidvjC6rwTuo73agrH0RewBoWrNxyzqtRiCtzs_0ruIBHFD0ovoCGf9n9eJOzkyeLXUPkGN3uvLSwMFMCXGG2AHMDM38oFM2ennAKAOXaVNMV_96F-Y1_J6YeNCBpxphwOoLwwmjbARR4hR4oJn8JMbouHI8vXq7of03Z9RQ7_lZ9H4DTorFa2GINw5Qftu7V370tY39xUn_FqCVCuWOMsWFZDaVu0ISHc-mDyAZG5MVfIoqteIy7yBBXgnCW8hETI4-XtdJaHB8J6QtACiRSc5G19ZajGRrKpA5k8T22eNjtxP4hlpOyGOaKJSCMbcLcZ7jvQ3Urbyp_KszYEPw8ZR2OljKJbPo_ttpTsTW399FdHe6Jsggj7eQU5kE6Hri0x5_pyaaLZPdbp7xow_Ly2kSA';
+
   Future<bool> _handleLogin(String username, String password) async {
     await Future<void>.delayed(const Duration(milliseconds: 500));
 
@@ -203,9 +243,7 @@ class _LoginGateState extends State<LoginGate> {
     if (ok) {
       setState(() {
         _loggedIn = true;
-        // IMPORTANT: Replace with your actual Dropbox access token
-        _dropboxToken =
-            'sl.u.AGBaYeFIM5bN9aW7qxAwDq_9X1zTKpwnLb2Lqm3a6W4YxTuyJQpR92zLVGh_yJSzcaQR3fuQmq5xOHc65sVQeKZxS6Kmey9MZ8TLaiq36vM-fobrhsdbhr1gFWbPQ24LSw98LRlrvKoTqDIUozqmqf3OfsMI0wwUfqud7n1HfTwiSJSYVqCKDZOCLfiWLFUWnJkAqNdQFx2qBWXcVxYyakclQMFiolKvAlLF-3uKoPk9TWFdEPS4BD1DyyCertwYxQzrNlszDsQDmqeueAK3kxz-sNfdIZ1N6aGIkW50wu0VQj8cgEPvcQ767Jx-gAFnby26Pw8YIr1jLVo8uQxqPnBV1H3Rkhzez5OZkQ385OzkWX157H1iIQ54bT878gtu4wgnYGuDtbH_B_FBYwDbUVo6kmYh110sr6yRS1yjahg2gF-ERfzYcXuLx04Nxd9TiHTX2KpG9tgvAL2iQ4VseS412UENefiQdcL3AvrnJxIoREsL49YC0l4za74RNdb-4iYhWr4tpC2fCPW-n3yeWIoKQ021cM-hi_WO-67E6tjztCnHdCJDq2unqjORZQl97-ALvKlODhZg8Hnxf9Nvq7_uVWr_OXvh1ZjhV-9JXj2IjMXHd3giK13SRyKfaxiOR76FRXG3uk5f37nkJn0qtbPY4zdsexi7fc8hfyNxBAKUe7SXXwfdS7shDEqq3Gguzk10Xq82RLfbllUAjGCOBDplvf2fLk6wuRQ02mgC8rYh4Pw3mmWjKGVE93ntJbXql4jdmyJF5XJ8wDrBDaIx76ri9u1SFfpwmSRf9fJrpTxd8McruuXiV-9IW0-agsT3-XVP-o4DkkDfeJYNc0sxMSg1F9ukr41yUwbFf5Mj4_76sa7ujEc7HiXArHIpoudzqH3Q5MiRSw6I_arM1ROMmU9RnLw0LoshdUVRT-Q5SX0f37q0Hu-W4VV93NUOaUKQ-e4rq5-l0HRqpWAnVRrJeuv9gYEqzC_CFVDxVHNfDitylJpy9UjkCXjWP9vwHM--5jSLTY4Xl4IEJdPc1GgSpKdqMSCy7xL-w7erGtjxiqw4JZ31oFisoUYyr2cRDa24UdXSeEtsViRKHZ4NyK7KEQczsYDUAl-QgR_t_Rm3Xbe8wKkCoyKbe4VZMbEGu48BjrOxkW7BueMg6sksG4O2tYfQ9eFBj6OrB8wEkcNvw5N_lSjCpr4W5jod2oF_LeYZL7zmxL7wrFwmQxtHnnS_WDQ_n0nwdfwAM2Uk4OATGNJ6-R2306Bl22HLzwsnKevUcIx1u5pp6TF-9x5c0faXaa7jZAufkGiXmHpQ8rNtw83gjU7Z3rTnd6-beqorH4n9WMjjL96fhxLEbWnRRQvsB3IdW3TNuTudaO_MMOKNUlYoRyK4RGI0xyZ3P6j4vUs_jvof2WNsQNYLJ2s0FqA2R1S1VnLwNESB5DDW-Nl6S9cwIQ';
+        _dropboxToken = dropboxAccessToken;
       });
     }
     return ok;
@@ -214,8 +252,8 @@ class _LoginGateState extends State<LoginGate> {
   @override
   Widget build(BuildContext context) {
     if (_loggedIn && _dropboxToken != null) {
-      return FolderHomePage(dropboxToken: _dropboxToken!);
+      return SafeArea(child: FolderHomePage(dropboxToken: _dropboxToken!));
     }
-    return LoginPage(onLogin: _handleLogin);
+    return SafeArea(child: LoginPage(onLogin: _handleLogin));
   }
 }

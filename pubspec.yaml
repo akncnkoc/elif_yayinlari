@@ -1,29 +1,33 @@
-name: elif_yayinlari
+name: "akilli_tahta_proje_demo"
 description: "A new Flutter project."
-publish_to: "none" # Remove this line if you wish to publish to pub.dev
-version: 1.0.0+1
-
+publish_to: "none"
+version: "1.0.0+1"
 environment:
-  sdk: ^3.9.2
-
+  sdk: "^3.9.2"
 dependencies:
   flutter:
-    sdk: flutter
-
-  cupertino_icons: ^1.0.8
-  pdfx: ^2.9.2
-  http: ^1.2.2
-  vector_math: ^2.1.4
-  path_provider: ^2.1.5
-
+    sdk: "flutter"
+  cupertino_icons: "^1.0.8"
+  pdfx: "^2.9.2"
+  http: "^1.2.2"
+  vector_math: "^2.1.4"
+  path_provider: "^2.1.5"
+  window_manager: "^0.5.1"
+  inno_build: "^0.4.0"
+  archive: ^3.4.0
+  package_info_plus: ^9.0.0
+  flutter_colorpicker: ^1.1.0
+  screen_retriever: ^0.2.0
+  syncfusion_flutter_pdfviewer: ^31.1.23
+  syncfusion_flutter_pdf: any
+  flutter_resizable_container: ^4.2.0
+  flutter_box_transform: ^0.4.7
+  icons_flutter: ^0.0.5
 dev_dependencies:
   flutter_test:
-    sdk: flutter
-
-  flutter_lints: ^5.0.0
-
+    sdk: "flutter"
+  flutter_lints: "^5.0.0"
 flutter:
   uses-material-design: true
-
-  assets:
-    - assets/pdf/
+inno_build:
+  app_id: "b7005cc2-f2d5-4b12-9708-1588a796a837"

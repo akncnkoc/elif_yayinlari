@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:window_manager/window_manager.dart';
 import './dropbox/dropbox_service.dart';
 import './dropbox/models.dart';
 import 'login_page.dart';
@@ -7,7 +11,7 @@ import 'widgets/dropbox_pdf_thumbnail.dart';
 
 class FolderHomePage extends StatefulWidget {
   final String dropboxToken;
-  
+
   const FolderHomePage({super.key, required this.dropboxToken});
 
   @override
@@ -21,10 +25,11 @@ class _FolderHomePageState extends State<FolderHomePage> {
   List<OpenPdfTab> openTabs = [];
   int currentTabIndex = 0;
   bool isLoading = true;
-  bool showFolderBrowser = false; // Yeni PDF seçmek için folder görünümü
-  
+  bool isFullScreen = false;
+  bool showFolderBrowser = false;
+
   List<BreadcrumbItem> breadcrumbs = [
-    BreadcrumbItem(name: 'Elif Yayınları', path: ''),
+    BreadcrumbItem(name: 'Akilli Tahta Proje Demo', path: ''),
   ];
 
   @override
@@ -36,28 +41,33 @@ class _FolderHomePageState extends State<FolderHomePage> {
 
   String get currentPath => breadcrumbs.last.path;
 
+  Future<void> _makeFullscreen() async {
+    setState(() => isFullScreen = !isFullScreen);
+    await windowManager.setFullScreen(isFullScreen);
+  }
+
   Future<void> _loadFolder(String path) async {
     setState(() => isLoading = true);
-    
+
     try {
       final items = await dropboxService.listFolder(path);
-      
+
       print('=== FOLDER CONTENTS: $path ===');
       print('Total items found: ${items.length}');
-      
+
       final foldersList = items.where((item) => item.isFolder).toList();
       final pdfsList = items.where((item) => item.isPdf).toList();
-      
+
       print('Total folders: ${foldersList.length}');
       print('Total PDFs: ${pdfsList.length}');
       print('=== END ===');
-      
+
       setState(() {
         folders = foldersList;
         pdfs = pdfsList;
         isLoading = false;
       });
-      
+
       if (foldersList.isEmpty && pdfsList.isEmpty) {
         _showError('This folder is empty');
       }
@@ -90,12 +100,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
     });
   }
 
-  void _closeFolderBrowser() {
-    setState(() {
-      showFolderBrowser = false;
-    });
-  }
-
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -106,58 +110,14 @@ class _FolderHomePageState extends State<FolderHomePage> {
     );
   }
 
-  Future<void> _showOpenPdfDialog() async {
-    final Set<String> alreadyOpen = openTabs.map((t) => t.dropboxPath ?? '').toSet();
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Dropbox\'tan PDF Aç'),
-          content: SizedBox(
-            width: 400,
-            height: 300,
-            child: pdfs.isEmpty
-                ? const Center(child: Text('Bu klasörde PDF yok'))
-                : ListView.separated(
-                    itemCount: pdfs.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, index) {
-                      final pdf = pdfs[index];
-                      final isDisabled = alreadyOpen.contains(pdf.path);
-                      return ListTile(
-                        title: Text(pdf.name),
-                        enabled: !isDisabled,
-                        trailing: isDisabled
-                            ? const Icon(Icons.check, color: Colors.grey)
-                            : const Icon(Icons.add),
-                        onTap: isDisabled
-                            ? null
-                            : () {
-                                Navigator.of(context).pop();
-                                _openPdfFromDropbox(pdf);
-                              },
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Kapat'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
   Future<void> _openPdfFromDropbox(DropboxItem pdf) async {
-    final existingIndex = openTabs.indexWhere((tab) => tab.dropboxPath == pdf.path);
+    final existingIndex = openTabs.indexWhere(
+      (tab) => tab.dropboxPath == pdf.path,
+    );
     if (existingIndex != -1) {
       setState(() {
         currentTabIndex = existingIndex;
-        showFolderBrowser = false; // Folder browser'ı kapat
+        showFolderBrowser = false;
       });
       return;
     }
@@ -165,9 +125,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
     try {
@@ -175,13 +133,15 @@ class _FolderHomePageState extends State<FolderHomePage> {
       Navigator.of(context).pop();
 
       setState(() {
-        openTabs.add(OpenPdfTab(
-          pdfPath: file.path,
-          title: pdf.name,
-          dropboxPath: pdf.path,
-        ));
+        openTabs.add(
+          OpenPdfTab(
+            pdfPath: file.path,
+            title: pdf.name,
+            dropboxPath: pdf.path,
+          ),
+        );
         currentTabIndex = openTabs.length - 1;
-        showFolderBrowser = false; // Folder browser'ı kapat
+        showFolderBrowser = false;
       });
     } catch (e) {
       Navigator.of(context).pop();
@@ -220,7 +180,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+              color: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
@@ -246,7 +208,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
                         ),
                         decoration: i == breadcrumbs.length - 1
                             ? BoxDecoration(
-                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.primary.withValues(alpha: 0.08),
                                 borderRadius: BorderRadius.circular(8),
                               )
                             : null,
@@ -259,7 +223,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
                                 : FontWeight.w500,
                             color: i == breadcrumbs.length - 1
                                 ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context).colorScheme.onSurfaceVariant,
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
                             letterSpacing: -0.2,
                           ),
                         ),
@@ -271,7 +237,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
                         child: Icon(
                           Icons.chevron_right_rounded,
                           size: 18,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
                         ),
                       ),
                   ],
@@ -308,7 +276,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
                 itemBuilder: (context, index) {
                   final tab = openTabs[index];
                   final isSelected = index == currentTabIndex;
-              
+
                   return Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: InkWell(
@@ -330,7 +298,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
                           borderRadius: BorderRadius.circular(12),
                           color: isSelected && !showFolderBrowser
                               ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.surfaceContainerHighest,
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
                           border: Border.all(
                             color: isSelected && !showFolderBrowser
                                 ? Theme.of(context).colorScheme.primary
@@ -346,7 +316,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
                               size: 16,
                               color: isSelected && !showFolderBrowser
                                   ? Theme.of(context).colorScheme.onPrimary
-                                  : Theme.of(context).colorScheme.onSurfaceVariant,
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
                             ),
                             const SizedBox(width: 8),
                             Flexible(
@@ -373,8 +345,11 @@ class _FolderHomePageState extends State<FolderHomePage> {
                                   Icons.close_rounded,
                                   size: 16,
                                   color: isSelected && !showFolderBrowser
-                                      ? Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.8)
-                                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ? Theme.of(context).colorScheme.onPrimary
+                                            .withValues(alpha: 0.8)
+                                      : Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
                                 ),
                               ),
                             ),
@@ -419,7 +394,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
     if (isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    
+
     if (folders.isEmpty && pdfs.isEmpty) {
       return Center(
         child: Padding(
@@ -427,27 +402,17 @@ class _FolderHomePageState extends State<FolderHomePage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.folder_off,
-                size: 64,
-                color: Colors.grey,
-              ),
+              const Icon(Icons.folder_off, size: 64, color: Colors.grey),
               const SizedBox(height: 16),
               const Text(
                 'Bu klasör boş',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
               const Text(
                 'Dropbox\'a dosya veya klasör ekleyin',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 16),
               ElevatedButton.icon(
@@ -484,7 +449,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.primary.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Icon(
@@ -522,7 +489,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         borderRadius: const BorderRadius.only(
                           topLeft: Radius.circular(16),
                           topRight: Radius.circular(16),
@@ -542,7 +511,10 @@ class _FolderHomePageState extends State<FolderHomePage> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     width: double.infinity,
                     child: Row(
                       children: [
@@ -587,8 +559,15 @@ class _FolderHomePageState extends State<FolderHomePage> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Elif Yayınları - Dropbox'),
+          title: const Text('Akilli Tahta Proje Demo - Dropbox'),
           actions: [
+            IconButton(
+              tooltip: 'Yenile',
+              icon: !isFullScreen
+                  ? const Icon(Icons.fullscreen)
+                  : const Icon(Icons.fullscreen_exit),
+              onPressed: () => _makeFullscreen(),
+            ),
             if (openTabs.isEmpty && !isLoading)
               IconButton(
                 tooltip: 'Yenile',
@@ -600,9 +579,21 @@ class _FolderHomePageState extends State<FolderHomePage> {
               icon: const Icon(Icons.logout),
               onPressed: () {
                 Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => LoginPage(onLogin: (_, __) async => false)),
+                  MaterialPageRoute(
+                    builder: (_) => LoginPage(onLogin: (_, __) async => false),
+                  ),
                   (route) => false,
                 );
+              },
+            ),
+            IconButton(
+              tooltip: 'Kapat',
+              icon: const Icon(Icons.close),
+              onPressed: () {
+                SystemChannels.platform.invokeMethod<void>(
+                  'SystemNavigator.pop',
+                );
+                exit(0);
               },
             ),
           ],
@@ -610,7 +601,8 @@ class _FolderHomePageState extends State<FolderHomePage> {
         body: Column(
           children: [
             if (openTabs.isNotEmpty) _buildTabBar(),
-            if ((openTabs.isEmpty || showFolderBrowser) && !isLoading) _buildBreadcrumbs(),
+            if ((openTabs.isEmpty || showFolderBrowser) && !isLoading)
+              _buildBreadcrumbs(),
             Expanded(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 200),

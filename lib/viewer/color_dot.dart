@@ -19,8 +19,8 @@ class ColorDot extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: 44,
-        height: 44,
+        width: 44 * 2,
+        height: 44 * 2,
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
           shape: BoxShape.circle,

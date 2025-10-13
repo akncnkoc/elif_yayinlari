@@ -1,14 +1,19 @@
 import 'dart:io';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:path_provider/path_provider.dart';
 
-Future<String> resolvePdfPath(String assetPath) async {
-  if (!Platform.isMacOS && !Platform.isWindows && !Platform.isLinux) {
-    return assetPath;
+Future<String> resolvePdfPath(String pdfPath) async {
+  // If already a file path, return directly
+  if (pdfPath.contains(':\\') || pdfPath.startsWith('/')) {
+    return pdfPath;
   }
-  final data = await rootBundle.load(assetPath);
-  final file = File(
-    '${Directory.systemTemp.path}/${assetPath.split('/').last}',
+
+  // If it's an asset, copy it to a temp file
+  final bytes = await rootBundle.load(pdfPath);
+  final file = File('${(await getTemporaryDirectory()).path}/$pdfPath');
+  await file.create(recursive: true);
+  await file.writeAsBytes(
+    bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
   );
-  await file.writeAsBytes(data.buffer.asUint8List());
   return file.path;
 }

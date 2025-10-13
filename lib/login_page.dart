@@ -1,4 +1,7 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class LoginPage extends StatefulWidget {
   final Future<bool> Function(String username, String password) onLogin;
@@ -38,7 +41,7 @@ class _LoginPageState extends State<LoginPage> {
     if (!mounted) return;
     setState(() {
       _loading = false;
-      _error = ok ? null : 'Invalid username or password';
+      _error = ok ? null : 'Email veya sifre yanlis';
     });
   }
 
@@ -59,7 +62,7 @@ class _LoginPageState extends State<LoginPage> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Elif Yayınları',
+                      'Akilli Tahta Proje Demo',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 22,
@@ -132,6 +135,26 @@ class _LoginPageState extends State<LoginPage> {
                         label: const Text('Giris Yap'),
                       ),
                     ),
+                    SizedBox(height: 10),
+                    if (!Platform.isAndroid)
+                      SizedBox(
+                        height: 44,
+                        child: FilledButton.icon(
+                          onPressed: () {
+                            SystemChannels.platform.invokeMethod<void>(
+                              'SystemNavigator.pop',
+                            );
+                            exit(0);
+                          },
+                          style: ButtonStyle(
+                            backgroundColor: WidgetStateProperty.all(
+                              Colors.red,
+                            ),
+                          ),
+                          icon: const Icon(Icons.close_sharp),
+                          label: const Text('Kapat'),
+                        ),
+                      ),
                   ],
                 ),
               ),

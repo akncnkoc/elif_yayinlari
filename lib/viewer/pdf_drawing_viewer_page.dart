@@ -1,13 +1,18 @@
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'dart:io'; // 🆕 File için
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:pdfx/pdfx.dart';
-import 'pdf_utils.dart';
 import 'pdf_viewer_with_drawing.dart';
 import 'left_panel.dart';
-import 'pdf_thumbnail.dart';
+import '../soru_cozucu_service.dart';
+import 'pdf_thumbnail.dart'; // 🆕 Import ekle
 
 class PdfDrawingViewerPage extends StatefulWidget {
   final String pdfPath;
   final VoidCallback? onBack;
+
   const PdfDrawingViewerPage({super.key, required this.pdfPath, this.onBack});
 
   @override
@@ -15,276 +20,767 @@ class PdfDrawingViewerPage extends StatefulWidget {
 }
 
 class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
-  PdfController? pdfController;
-  final GlobalKey<PdfViewerWithDrawingState> drawingKey =
-      GlobalKey<PdfViewerWithDrawingState>();
+  late PdfController _pdfController;
+  final GlobalKey<PdfViewerWithDrawingState> _drawingKey = GlobalKey();
+  final GlobalKey _canvasKey = GlobalKey();
 
-  // Draggable panel position
-  double panelLeft = 100;
-  double panelTop = 100;
+  // Soru Çözücü Service
+  final SoruCozucuService _service = SoruCozucuService();
 
-  // Thumbnail panel visibility
-  bool _showThumbnails = false;
+  bool _isAnalyzing = false;
+  AnalysisResult? _lastResult;
+  bool _serverHealthy = false;
+  bool _showThumbnails = false; // 🆕 Thumbnail görünürlük kontrolü
 
   @override
   void initState() {
     super.initState();
-    _loadControllerFor(widget.pdfPath);
-  }
-
-  Future<void> _loadControllerFor(String pdfPath) async {
-    final realPath = await resolvePdfPath(pdfPath);
-    if (!mounted) return;
-    setState(() {
-      pdfController = PdfController(document: PdfDocument.openFile(realPath));
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant PdfDrawingViewerPage oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.pdfPath != widget.pdfPath) {
-      pdfController?.dispose();
-      pdfController = null;
-      setState(() {});
-      _loadControllerFor(widget.pdfPath);
-    }
+    _pdfController = PdfController(
+      document: PdfDocument.openFile(widget.pdfPath),
+    );
+    _checkServerHealth();
   }
 
   @override
   void dispose() {
-    pdfController?.dispose();
+    _pdfController.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (pdfController == null) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+  /// Python sunucusunun çalışıp çalışmadığını kontrol et
+  Future<void> _checkServerHealth() async {
+    final isHealthy = await _service.checkHealth();
 
-    final screenSize = MediaQuery.of(context).size;
+    if (!mounted) return;
 
-    return PopScope(
-      canPop: widget.onBack == null,
-      onPopInvokedWithResult: (didPop, result) {
-        if (!didPop && widget.onBack != null) {
-          widget.onBack!();
-        }
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.picture_as_pdf_rounded,
-                  size: 18,
-                  color: Theme.of(context).colorScheme.secondary,
-                ),
-              ),
-              const SizedBox(width: 12),
+    setState(() {
+      _serverHealthy = isHealthy;
+    });
+
+    if (!isHealthy) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: const [
+              Icon(Icons.warning_amber_rounded, color: Colors.white),
+              SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  widget.pdfPath.split('/').last,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: -0.3,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+                  'Python sunucusu çalışmıyor! Soru çözme özelliği kullanılamaz.',
+                  style: TextStyle(fontSize: 13),
                 ),
               ),
             ],
           ),
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded),
-            tooltip: 'Geri',
-            onPressed: () {
-              if (widget.onBack != null) {
-                widget.onBack!();
-              } else {
-                Navigator.of(context).maybePop();
-              }
-            },
+          backgroundColor: Colors.orange.shade700,
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'Tekrar Dene',
+            textColor: Colors.white,
+            onPressed: _checkServerHealth,
           ),
-          actions: [
-            IconButton(
-              icon: Icon(
-                _showThumbnails ? Icons.visibility_off_rounded : Icons.grid_view_rounded,
-              ),
-              tooltip: _showThumbnails ? 'Sayfaları Gizle' : 'Sayfaları Göster',
-              onPressed: () {
-                setState(() {
-                  _showThumbnails = !_showThumbnails;
-                });
-              },
-            ),
-          ],
         ),
-        body: Stack(
-          children: [
-            // PDF viewer fills the stack
-            Positioned.fill(
-              child: PdfViewerWithDrawing(
-                key: drawingKey,
-                controller: pdfController!,
-              ),
-            ),
+      );
+    }
+  }
 
-            // Bottom page thumbnails (animated show/hide)
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-              left: 0,
-              right: 0,
-              bottom: _showThumbnails ? 0 : -140,
-              child: Container(
-                height: 140,
+  /// Seçili alanı transform'a göre düzelt ve crop et
+  Future<Uint8List?> _captureSelectedArea() async {
+    try {
+      final state = _drawingKey.currentState;
+      if (state == null || state.selectedAreaNotifier.value == null) {
+        print('❌ Seçili alan yok');
+        return null;
+      }
+
+      final boundary =
+          _canvasKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+
+      if (boundary == null) {
+        print('❌ Canvas boundary bulunamadı');
+        return null;
+      }
+
+      // RenderBox boyutunu al
+      final renderBox =
+          _canvasKey.currentContext?.findRenderObject() as RenderBox?;
+      if (renderBox == null) {
+        print('❌ RenderBox bulunamadı');
+        return null;
+      }
+
+      final viewportSize = renderBox.size;
+      print(
+        '📱 Viewport boyutu: ${viewportSize.width} x ${viewportSize.height}',
+      );
+
+      // Viewport koordinatlarında seçim alanını kullan (zoom'dan bağımsız)
+      final selectedRect = state.selectedAreaNotifier.value!;
+      print(
+        '📐 Kullanıcının seçtiği alan (viewport): x=${selectedRect.left.toInt()}, y=${selectedRect.top.toInt()}, w=${selectedRect.width.toInt()}, h=${selectedRect.height.toInt()}',
+      );
+
+      // Screenshot al - viewport boyutunda
+      final pixelRatio = 4.0;
+      print('📸 Screenshot alınıyor (pixelRatio: $pixelRatio)...');
+
+      final fullImage = await boundary.toImage(pixelRatio: pixelRatio);
+      print('🖼️ Screenshot boyutu: ${fullImage.width} x ${fullImage.height}');
+
+      // Gerçek scale faktörü (screenshot boyutu / viewport boyutu)
+      final actualScaleX = fullImage.width / viewportSize.width;
+      final actualScaleY = fullImage.height / viewportSize.height;
+
+      print('📏 Scale faktörleri: X=$actualScaleX, Y=$actualScaleY');
+
+      // Seçili alanı scale et
+      final scaledLeft = selectedRect.left * actualScaleX;
+      final scaledTop = selectedRect.top * actualScaleY;
+      final scaledWidth = selectedRect.width * actualScaleX;
+      final scaledHeight = selectedRect.height * actualScaleY;
+
+      print(
+        '✂️ Scaled crop area: x=${scaledLeft.toInt()}, y=${scaledTop.toInt()}, w=${scaledWidth.toInt()}, h=${scaledHeight.toInt()}',
+      );
+
+      // Sınırları clamp et
+      final clampedLeft = scaledLeft.clamp(0.0, fullImage.width.toDouble());
+      final clampedTop = scaledTop.clamp(0.0, fullImage.height.toDouble());
+      final clampedRight = (scaledLeft + scaledWidth).clamp(
+        0.0,
+        fullImage.width.toDouble(),
+      );
+      final clampedBottom = (scaledTop + scaledHeight).clamp(
+        0.0,
+        fullImage.height.toDouble(),
+      );
+
+      final finalWidth = (clampedRight - clampedLeft).toInt();
+      final finalHeight = (clampedBottom - clampedTop).toInt();
+
+      print(
+        '🎯 Final crop (clamped): x=${clampedLeft.toInt()}, y=${clampedTop.toInt()}, w=$finalWidth, h=$finalHeight',
+      );
+
+      // Geçerlilik kontrolü
+      if (finalWidth < 10 || finalHeight < 10) {
+        print('❌ Crop alanı çok küçük: ${finalWidth}x$finalHeight');
+        fullImage.dispose();
+        return null;
+      }
+
+      // Crop rectangle
+      final cropRect = Rect.fromLTWH(
+        clampedLeft,
+        clampedTop,
+        finalWidth.toDouble(),
+        finalHeight.toDouble(),
+      );
+
+      // Yeni image oluştur
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+
+      // Arka planı beyaz yap
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, finalWidth.toDouble(), finalHeight.toDouble()),
+        Paint()..color = Colors.white,
+      );
+
+      // Crop edilen bölgeyi çiz
+      canvas.drawImageRect(
+        fullImage,
+        cropRect,
+        Rect.fromLTWH(0, 0, finalWidth.toDouble(), finalHeight.toDouble()),
+        Paint()..filterQuality = FilterQuality.high,
+      );
+
+      final picture = recorder.endRecording();
+
+      // Eğer görsel çok küçükse, upscale yap
+      final minDimension = 1200; // Minimum boyut
+      int outputWidth = finalWidth;
+      int outputHeight = finalHeight;
+
+      if (finalWidth < minDimension || finalHeight < minDimension) {
+        final scale =
+            minDimension /
+            (finalWidth < finalHeight ? finalWidth : finalHeight);
+        outputWidth = (finalWidth * scale).toInt();
+        outputHeight = (finalHeight * scale).toInt();
+        print(
+          '📈 Upscaling: ${finalWidth}x$finalHeight → ${outputWidth}x$outputHeight',
+        );
+      }
+
+      final croppedImage = await picture.toImage(outputWidth, outputHeight);
+
+      print(
+        '✅ Cropped image oluşturuldu: ${croppedImage.width} x ${croppedImage.height}',
+      );
+
+      // PNG'ye dönüştür
+      final byteData = await croppedImage.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
+
+      // Cleanup
+      fullImage.dispose();
+      croppedImage.dispose();
+
+      final result = byteData?.buffer.asUint8List();
+
+      if (result != null) {
+        print('💾 PNG boyutu: ${(result.length / 1024).toStringAsFixed(1)} KB');
+
+        // Debug: Görseli kaydet
+        try {
+          final downloadsPath =
+              '/Users/${Platform.environment['USER']}/Downloads';
+          final timestamp = DateTime.now().millisecondsSinceEpoch;
+          final debugFile = File('$downloadsPath/debug_crop_$timestamp.png');
+          await debugFile.writeAsBytes(result);
+          print('🔍 Debug: Görsel kaydedildi → ${debugFile.path}');
+          print('👁️ Görseli açıp doğru kesilip kesilmediğini kontrol edin!');
+        } catch (e) {
+          print('⚠️ Debug kayıt hatası: $e');
+        }
+      }
+
+      return result;
+    } catch (e, stackTrace) {
+      print('❌ Crop hatası: $e');
+      print('Stack trace: $stackTrace');
+      return null;
+    }
+  }
+
+  /// Soru çözme işlemini başlat
+  Future<void> _solveProblem() async {
+    if (_isAnalyzing) return;
+
+    final state = _drawingKey.currentState;
+    if (state == null || state.selectedAreaNotifier.value == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ Lütfen önce bir alan seçin!'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Sunucu kontrolü
+    if (!_serverHealthy) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Python sunucusu çalışmıyor!'),
+          backgroundColor: Colors.red,
+          action: SnackBarAction(
+            label: 'Test Et',
+            textColor: Colors.white,
+            onPressed: _checkServerHealth,
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isAnalyzing = true;
+      _lastResult = null;
+    });
+
+    // Progress indicator göster
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text(
+                  '🤖 Seçili alan analiz ediliyor...',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      // 1. Seçili alanı capture et
+      print('📸 Seçili alan capture ediliyor...');
+      final imageBytes = await _captureSelectedArea();
+
+      if (imageBytes == null) {
+        throw Exception('Görsel alınamadı');
+      }
+
+      print('✅ Seçili alan alındı: ${imageBytes.length} bytes');
+
+      // 2. Python API'ye gönder ve analiz et
+      print('🔍 API\'ye gönderiliyor...');
+      final result = await _service.analyzeImage(imageBytes, returnImage: true);
+
+      if (!mounted) return;
+      Navigator.of(context).pop(); // Progress dialog'u kapat
+
+      if (result == null || !result.success) {
+        throw Exception(result?.error ?? 'Analiz başarısız');
+      }
+
+      print('✅ Analiz tamamlandı: ${result.soruSayisi} soru bulundu');
+
+      setState(() {
+        _lastResult = result;
+      });
+
+      // 3. Seçimi temizle
+      state.clearSelection();
+
+      // 4. Sonuçları göster
+      _showResultDialog(result);
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('❌ Hata: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+      print('❌ Soru çözme hatası: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAnalyzing = false;
+        });
+      }
+    }
+  }
+
+  /// Sonuçları dialog'da göster
+  void _showResultDialog(AnalysisResult result) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: 800,
+            maxHeight: MediaQuery.of(context).size.height * 0.8,
+          ),
+          child: Column(
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  border: Border(
-                    top: BorderSide(
-                      color: Theme.of(context).dividerColor,
-                      width: 1,
-                    ),
+                  color: Theme.of(context).colorScheme.primary,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.08),
-                      blurRadius: 16,
-                      offset: const Offset(0, -4),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      color: Colors.white,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        '${result.soruSayisi} Soru Bulundu',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
                     ),
                   ],
                 ),
-                child: ValueListenableBuilder<int>(
-                  valueListenable: pdfController!.pageListenable,
-                  builder: (context, currentPage, _) {
-                    final pageCount = pdfController!.pagesCount ?? 1;
-                    return ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.all(8),
-                      itemCount: pageCount,
-                      itemBuilder: (context, index) {
-                        final pageNumber = index + 1;
-                        final isCurrentPage = pageNumber == currentPage;
+              ),
 
-                        return PdfThumbnail(
-                          key: ValueKey(pageNumber),
-                          controller: pdfController!,
-                          pageNumber: pageNumber,
-                          isCurrentPage: isCurrentPage,
-                          onTap: () => pdfController!.jumpToPage(pageNumber),
+              // Content
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Cevaplı görsel varsa göster
+                      if (result.resultImage != null) ...[
+                        const Text(
+                          '📸 Cevaplı Görsel',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.memory(
+                            result.resultImage!,
+                            fit: BoxFit.contain,
+                            width: double.infinity,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        const Divider(),
+                        const SizedBox(height: 24),
+                      ],
+
+                      // Soru detayları
+                      const Text(
+                        '📝 Soru Detayları',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      ...result.sorular.asMap().entries.map((entry) {
+                        final soru = entry.value;
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          child: Card(
+                            elevation: 2,
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Soru başlığı
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary
+                                          .withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      'Soru ${soru.soruNo}',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  // Soru metni
+                                  Text(
+                                    soru.metin,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      height: 1.5,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  // Cevap
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade50,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: Colors.green,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.check_circle,
+                                          color: Colors.green,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          'Cevap: ${soru.dogruSecenek}',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.green,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+
+                                  // Açıklama
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.surfaceContainerHighest,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(
+                                          Icons.lightbulb_outline,
+                                          size: 18,
+                                          color: Colors.amber,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            soru.aciklama,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                              height: 1.5,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         );
+                      }).toList(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Column(
+        children: [
+          // ÜST BAR - Sayfa Bilgisi ve Kontroller
+          Container(
+            height: 60,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              border: Border(
+                bottom: BorderSide(
+                  color: Theme.of(context).dividerColor,
+                  width: 1,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                // PDF İkonu ve Başlık
+                Icon(
+                  Icons.picture_as_pdf,
+                  color: Theme.of(context).colorScheme.primary,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    widget.pdfPath.split('/').last,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+
+                // Sayfa Bilgisi (Tıklanabilir - Thumbnail Toggle)
+                ValueListenableBuilder<int>(
+                  valueListenable: _pdfController.pageListenable,
+                  builder: (context, currentPage, child) {
+                    return InkWell(
+                      onTap: () {
+                        setState(() {
+                          _showThumbnails = !_showThumbnails;
+                        });
                       },
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _showThumbnails
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _showThumbnails
+                                  ? Icons.grid_view
+                                  : Icons.description,
+                              size: 16,
+                              color: _showThumbnails
+                                  ? Theme.of(context).colorScheme.onPrimary
+                                  : Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Sayfa $currentPage / ${_pdfController.pagesCount ?? 0}',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: _showThumbnails
+                                    ? Theme.of(context).colorScheme.onPrimary
+                                    : Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              _showThumbnails
+                                  ? Icons.expand_more
+                                  : Icons.chevron_right,
+                              size: 18,
+                              color: _showThumbnails
+                                  ? Theme.of(context).colorScheme.onPrimary
+                                  : Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                            ),
+                          ],
+                        ),
+                      ),
                     );
                   },
                 ),
-              ),
-            ),
 
-            // Draggable LeftPanel
-            Positioned(
-              left: panelLeft,
-              top: panelTop,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: Theme.of(context).dividerColor,
-                    width: 1.5,
+                const SizedBox(width: 16),
+
+                // Zoom Seviyesi
+                ValueListenableBuilder<PdfViewerWithDrawingState?>(
+                  valueListenable: ValueNotifier(_drawingKey.currentState),
+                  builder: (context, state, child) {
+                    final zoomLevel = state?.zoomLevel ?? 1.0;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.zoom_in, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${(zoomLevel * 100).toInt()}%',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+
+                const SizedBox(width: 16),
+
+                // Geri Butonu
+                if (widget.onBack != null)
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: widget.onBack,
+                    tooltip: 'Kapat',
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.12),
-                      blurRadius: 24,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Draggable handle
-                    GestureDetector(
-                      onPanUpdate: (details) {
-                        setState(() {
-                          panelLeft += details.delta.dx;
-                          panelTop += details.delta.dy;
-
-                          // Approximate panel size for boundaries
-                          const panelWidth = 320.0;
-                          const panelHeight = 520.0;
-
-                          // Clamp to screen bounds
-                          panelLeft = panelLeft.clamp(
-                            0.0,
-                            screenSize.width - panelWidth,
-                          );
-                          panelTop = panelTop.clamp(
-                            0.0,
-                            screenSize.height - panelHeight,
-                          );
-                        });
-                      },
-                      child: Container(
-                        width: 320,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                          borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(16),
-                            topRight: Radius.circular(16),
-                          ),
-                        ),
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 32,
-                                height: 4,
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                'Çizim Araçları',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  letterSpacing: -0.2,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    // Panel content with fixed height
-                    SizedBox(
-                      width: 320,
-                      height: 472,
-                      child: LeftPanel(
-                        controller: pdfController!,
-                        drawingKey: drawingKey,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ),
-          ],
-        ),
+          ),
+
+          // PDF Viewer + Floating Panel
+          Expanded(
+            child: Stack(
+              children: [
+                // PDF Viewer (Full screen)
+                RepaintBoundary(
+                  key: _canvasKey,
+                  child: PdfViewerWithDrawing(
+                    key: _drawingKey,
+                    controller: _pdfController,
+                  ),
+                ),
+
+                // Floating Panel (Overlay)
+                FloatingLeftPanel(
+                  controller: _pdfController,
+                  drawingKey: _drawingKey,
+                  onSolveProblem: _serverHealthy ? _solveProblem : null,
+                ),
+              ],
+            ),
+          ),
+
+          // 🆕 ALT KISIM - PDF Thumbnail List (Toggle edilebilir)
+          if (_showThumbnails)
+            ValueListenableBuilder<int>(
+              valueListenable: _pdfController.pageListenable,
+              builder: (context, currentPage, child) {
+                return PdfThumbnailList(
+                  pdfController: _pdfController,
+                  currentPage: currentPage,
+                  totalPages: _pdfController.pagesCount ?? 0,
+                  onPageSelected: (pageNumber) {
+                    _pdfController.jumpToPage(pageNumber);
+                  },
+                );
+              },
+            ),
+        ],
       ),
     );
   }
