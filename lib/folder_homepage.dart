@@ -3,30 +3,33 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
+import 'package:file_picker/file_picker.dart';
 import './dropbox/dropbox_service.dart';
+import './dropbox/dropbox_oauth.dart';
+import './dropbox/dropbox_auth_page.dart';
 import './dropbox/models.dart';
 import 'login_page.dart';
 import 'viewer/pdf_drawing_viewer_page.dart';
 import 'widgets/dropbox_pdf_thumbnail.dart';
 
 class FolderHomePage extends StatefulWidget {
-  final String dropboxToken;
-
-  const FolderHomePage({super.key, required this.dropboxToken});
+  const FolderHomePage({super.key});
 
   @override
   State<FolderHomePage> createState() => _FolderHomePageState();
 }
 
 class _FolderHomePageState extends State<FolderHomePage> {
-  late DropboxService dropboxService;
+  DropboxService? dropboxService;
   List<DropboxItem> folders = [];
   List<DropboxItem> pdfs = [];
   List<OpenPdfTab> openTabs = [];
   int currentTabIndex = 0;
-  bool isLoading = true;
+  bool isLoading = false;
   bool isFullScreen = false;
   bool showFolderBrowser = false;
+  bool useDropbox = false;
+  bool showStorageSelection = true;
 
   List<BreadcrumbItem> breadcrumbs = [
     BreadcrumbItem(name: 'Akilli Tahta Proje Demo', path: ''),
@@ -35,11 +38,50 @@ class _FolderHomePageState extends State<FolderHomePage> {
   @override
   void initState() {
     super.initState();
-    dropboxService = DropboxService(widget.dropboxToken);
-    _loadFolder('');
+    // Don't automatically load anything - let user choose storage type
   }
 
   String get currentPath => breadcrumbs.last.path;
+
+  void _selectLocalStorage() {
+    setState(() {
+      showStorageSelection = false;
+      useDropbox = false;
+      // Local files will be picked by user on-demand
+    });
+  }
+
+  Future<void> _selectDropboxStorage() async {
+    final oauth = DropboxOAuth();
+    await oauth.initialize();
+
+    if (!oauth.isAuthenticated()) {
+      // Navigate to Dropbox auth page
+      if (!mounted) return;
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DropboxAuthPage(
+            onAuthSuccess: () {
+              Navigator.pop(context, true);
+            },
+          ),
+        ),
+      );
+
+      if (result != true) {
+        // User cancelled authentication
+        return;
+      }
+    }
+
+    setState(() {
+      showStorageSelection = false;
+      useDropbox = true;
+      dropboxService = DropboxService();
+    });
+    _loadFolder('');
+  }
 
   Future<void> _makeFullscreen() async {
     setState(() => isFullScreen = !isFullScreen);
@@ -47,10 +89,12 @@ class _FolderHomePageState extends State<FolderHomePage> {
   }
 
   Future<void> _loadFolder(String path) async {
+    if (dropboxService == null) return;
+
     setState(() => isLoading = true);
 
     try {
-      final items = await dropboxService.listFolder(path);
+      final items = await dropboxService!.listFolder(path);
 
       print('=== FOLDER CONTENTS: $path ===');
       print('Total items found: ${items.length}');
@@ -78,6 +122,35 @@ class _FolderHomePageState extends State<FolderHomePage> {
     }
   }
 
+  Future<void> _pickLocalPdf() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
+        allowMultiple: false,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final filePath = result.files.single.path!;
+        final fileName = result.files.single.name;
+
+        setState(() {
+          openTabs.add(
+            OpenPdfTab(
+              pdfPath: filePath,
+              title: fileName,
+              dropboxPath: null,
+            ),
+          );
+          currentTabIndex = openTabs.length - 1;
+          showFolderBrowser = false;
+        });
+      }
+    } catch (e) {
+      _showError('Failed to open PDF: $e');
+    }
+  }
+
   void _navigateToFolder(String folderPath, String folderName) {
     setState(() {
       breadcrumbs.add(BreadcrumbItem(name: folderName, path: folderPath));
@@ -95,9 +168,14 @@ class _FolderHomePageState extends State<FolderHomePage> {
   }
 
   void _openFolderBrowser() {
-    setState(() {
-      showFolderBrowser = true;
-    });
+    if (useDropbox) {
+      setState(() {
+        showFolderBrowser = true;
+      });
+    } else {
+      // For local mode, open file picker directly
+      _pickLocalPdf();
+    }
   }
 
   void _showError(String message) {
@@ -111,6 +189,8 @@ class _FolderHomePageState extends State<FolderHomePage> {
   }
 
   Future<void> _openPdfFromDropbox(DropboxItem pdf) async {
+    if (dropboxService == null) return;
+
     final existingIndex = openTabs.indexWhere(
       (tab) => tab.dropboxPath == pdf.path,
     );
@@ -129,7 +209,8 @@ class _FolderHomePageState extends State<FolderHomePage> {
     );
 
     try {
-      final file = await dropboxService.downloadFile(pdf.path);
+      final file = await dropboxService!.downloadFile(pdf.path);
+      if (!mounted) return;
       Navigator.of(context).pop();
 
       setState(() {
@@ -144,6 +225,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
         showFolderBrowser = false;
       });
     } catch (e) {
+      if (!mounted) return;
       Navigator.of(context).pop();
       _showError('Failed to open PDF: $e');
     }
@@ -395,6 +477,42 @@ class _FolderHomePageState extends State<FolderHomePage> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    if (!useDropbox) {
+      // For local mode, show empty state with "open file" button
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.picture_as_pdf,
+                size: 64,
+                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'PDF dosyası açın',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Bir PDF dosyası seçmek için + butonuna tıklayın',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _pickLocalPdf,
+                icon: const Icon(Icons.file_open),
+                label: const Text('Dosya Seç'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (folders.isEmpty && pdfs.isEmpty) {
       return Center(
         child: Padding(
@@ -505,7 +623,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
                         child: DropboxPdfThumbnail(
                           key: ValueKey(pdf.path),
                           pdfPath: pdf.path,
-                          dropboxService: dropboxService,
+                          dropboxService: dropboxService!,
                         ),
                       ),
                     ),
@@ -548,8 +666,188 @@ class _FolderHomePageState extends State<FolderHomePage> {
     );
   }
 
+  Widget _buildStorageSelectionScreen() {
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 500),
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.folder_open,
+              size: 80,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Dosya Kaynağı Seçin',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w700,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'PDF dosyalarınızı nereden açmak istersiniz?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 48),
+            Card(
+              child: InkWell(
+                onTap: _selectLocalStorage,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .primary
+                              .withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.computer,
+                          size: 32,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Yerel Dosyalar',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Bilgisayarınızdan PDF dosyası seçin',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        size: 20,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Card(
+              child: InkWell(
+                onTap: _selectDropboxStorage,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .secondary
+                              .withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.cloud,
+                          size: 32,
+                          color: Theme.of(context).colorScheme.secondary,
+                        ),
+                      ),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Dropbox',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: Theme.of(context).colorScheme.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Dropbox hesabınızdan dosya açın',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(
+                        Icons.arrow_forward_ios,
+                        size: 20,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (showStorageSelection) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Akilli Tahta Proje Demo'),
+          actions: [
+            IconButton(
+              tooltip: 'Çıkış Yap',
+              icon: const Icon(Icons.logout),
+              onPressed: () {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(
+                    builder: (_) => LoginPage(onLogin: (_, __) async => false),
+                  ),
+                  (route) => false,
+                );
+              },
+            ),
+          ],
+        ),
+        body: _buildStorageSelectionScreen(),
+      );
+    }
+
     return PopScope(
       canPop: openTabs.isEmpty,
       onPopInvokedWithResult: (didPop, result) {
@@ -559,7 +857,11 @@ class _FolderHomePageState extends State<FolderHomePage> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Akilli Tahta Proje Demo - Dropbox'),
+          title: Text(
+            useDropbox
+                ? 'Akilli Tahta Proje Demo - Dropbox'
+                : 'Akilli Tahta Proje Demo - Yerel',
+          ),
           actions: [
             IconButton(
               tooltip: 'Yenile',

@@ -5,16 +5,24 @@ import 'dart:async';
 import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'dropbox_oauth.dart';
 
 class DropboxService {
-  final String accessToken;
+  final DropboxOAuth _oauth = DropboxOAuth();
 
-  DropboxService(this.accessToken);
+  DropboxService();
 
   Future<List<DropboxItem>> listFolder(String path) async {
     try {
       print('========================================');
       print('📂 Listing folder: "$path"');
+
+      // Get valid access token (will refresh if needed)
+      final accessToken = await _oauth.getValidAccessToken();
+      if (accessToken == null) {
+        throw Exception('Not authenticated. Please log in to Dropbox.');
+      }
+
       print(
         '🔑 Token (first 10 chars): ${accessToken.substring(0, min(10, accessToken.length))}...',
       );
@@ -84,6 +92,12 @@ class DropboxService {
     try {
       print('⬇️ Downloading file: $path');
 
+      // Get valid access token (will refresh if needed)
+      final accessToken = await _oauth.getValidAccessToken();
+      if (accessToken == null) {
+        throw Exception('Not authenticated. Please log in to Dropbox.');
+      }
+
       final response = await http
           .post(
             Uri.parse('https://content.dropboxapi.com/2/files/download'),
@@ -123,6 +137,13 @@ class DropboxService {
 
   Future<Uint8List?> getThumbnail(String path) async {
     try {
+      // Get valid access token (will refresh if needed)
+      final accessToken = await _oauth.getValidAccessToken();
+      if (accessToken == null) {
+        print('⚠️ Not authenticated for thumbnail');
+        return null;
+      }
+
       final response = await http.post(
         Uri.parse('https://content.dropboxapi.com/2/files/get_thumbnail_v2'),
         headers: {

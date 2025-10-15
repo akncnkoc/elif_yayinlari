@@ -5,6 +5,8 @@ import 'package:window_manager/window_manager.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'login_page.dart';
 import 'folder_homepage.dart';
+import 'dropbox/dropbox_oauth.dart';
+import 'dropbox/dropbox_auth_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -230,10 +232,6 @@ class LoginGate extends StatefulWidget {
 
 class _LoginGateState extends State<LoginGate> {
   bool _loggedIn = false;
-  String? _dropboxToken;
-
-  static const String dropboxAccessToken =
-      'sl.u.AGBUJvI2E_nPx3h6pm4PNKXfMZrJfZOImZVBNkVKjg4ODxKX_PQj2katjWSdPflrtef6TjQ49I_dtDuu1kY35e49ex3mMCNcUGGcZtnnBfd4Ig34Ed63a5K0d6HfXhUT4fOJp12wcfD-PVBEuoLYtVni8HjsR6_Rz8eZYR8R4RTewQVxJd3EoGVocEwjmeuSzOtLZ0961eHIyt-CNY345lwRIAPL2WdOZwt3N_NT2IqIaDlAjNhHklCJBc-Te9KZ10qX886SaLuw4b5eFed18IwJoAz3l8-EZtqUXjtVlf56oO27Y_lc0G7ghQPAHzBuHslpSbbpy3ij-tVCQQh5nYPniEGA2P_UzyTetUXBJcx58oDPyYUD4oapfe4-OXv9qak5mWBH_5tGeNWo7qdb7DYunh9JS02hYBHqQZllZ7oe-zn8dXJPDJ7chQ9xNCBird-bnuFqTGGux07bkpn209O5gr1kFPlyXa6OtCoNSiuI0iT_Y1f9kF3nySHJSu3saNkZPeWh28bJyUZ6qqz8p8pUMVoRq419N3JK3qBn7ZJ0R0euGo7v7hh9TJidJnDc4W2rxmgSB99Pg6aXp5JhagE_kMDplV2wRtBDuBbLDDB5YzQvzdyigSARBVVsWBhMJx0paDpwVhJ_ykda_wmub0guvCfXNSA1wE9uPrtXSL9LPjdPblf0Dxkcr9w-j4FTjb72L2DDP_8x41HjqymjguqQuyDTivxeboQPWhnq28YdPFvdH0DpGwuk_ahIif6cMQgh7lk5Dz0zSOl4Qan1hlqruCEg4cL317iM0j3qfLuGhRW_iTrSilFl8BvLBuVEUTMeKbxALUiObP_ZBOTgPyq_tT2eabXaRSDoceFZKscDQD8fI_cY9W6VHhLNW4Ry1WbwbTwf1LugTtllsMqCT2qLlcOVc1E__LDpdWYZErZGWlzA6V6f0fkBOar03t9u_p9i8p_0htxKXatkVTMASI4H7CuoOXz2AdD1MgOSdm5eBYV4sQBx2mf_mUb-o3gMxifvgGu7KlFyExRh80G9w2fYVN55Ali3qMO8G9aRNpdNzFvikRcKOK7JtdgQ1S-07Z2LDc0Qv-mTBaug89yhEqtSacVKCzsmz2Qr6znGBZDQjKX8MSwIdZy7s7btkrf1XDTtq_sjkMnwQ8AI7ItYqmZ-k655OePwSwpL75k3mf1ybPD1zJbC_62FRfmby89Xi3bZ5IHiPJ8ePq2eEFliSx25cjLCTwE9jN9YyRZ8jhzRWr_9GP-g7aKZffMjfmzW79eePKKRUwuLVNM0PHTPftXmsgi5SfHtouHO11BtRiWvgtLxDzFkO6fgE-9mIAtBgRsm-j9jYPpEyiCMS3QVuGvZrAHWYGMp3iBIufNmgLdaJ9Rdff0TVdbwU9T0CI_aZsmnXnxGjUXL8ag8Oxy_-zBFf21f_jEu_IGUJRwK4tOlsQ';
 
   Future<bool> _handleLogin(String username, String password) async {
     await Future<void>.delayed(const Duration(milliseconds: 500));
@@ -243,7 +241,6 @@ class _LoginGateState extends State<LoginGate> {
     if (ok) {
       setState(() {
         _loggedIn = true;
-        _dropboxToken = dropboxAccessToken;
       });
     }
     return ok;
@@ -251,9 +248,12 @@ class _LoginGateState extends State<LoginGate> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loggedIn && _dropboxToken != null) {
-      return SafeArea(child: FolderHomePage(dropboxToken: _dropboxToken!));
+    // Show login page if not logged in
+    if (!_loggedIn) {
+      return SafeArea(child: LoginPage(onLogin: _handleLogin));
     }
-    return SafeArea(child: LoginPage(onLogin: _handleLogin));
+
+    // Show folder homepage after login (no Dropbox requirement)
+    return const SafeArea(child: FolderHomePage());
   }
 }
