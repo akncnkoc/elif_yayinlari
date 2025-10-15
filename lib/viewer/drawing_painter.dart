@@ -12,12 +12,21 @@ class DrawingPainter extends CustomPainter {
       if (stroke.points.isEmpty) continue;
 
       final paint = Paint()
-        ..color = stroke.color
-        ..strokeWidth = stroke.width
-        ..strokeCap = StrokeCap.round
+        ..color = stroke.isHighlighter
+            ? stroke.color.withOpacity(0.4) // Highlighter için yarı saydam
+            : stroke.color
+        ..strokeWidth = stroke.isHighlighter
+            ? stroke.width * 2.5 // Highlighter daha geniş
+            : stroke.width
+        ..strokeCap = stroke.isHighlighter
+            ? StrokeCap.square // Highlighter kare uçlu
+            : StrokeCap.round
         ..strokeJoin = StrokeJoin.round
         ..style = PaintingStyle.stroke
-        ..isAntiAlias = true;
+        ..isAntiAlias = true
+        ..blendMode = stroke.isHighlighter
+            ? BlendMode.multiply // Highlighter için blend mode
+            : BlendMode.srcOver;
 
       switch (stroke.type) {
         case StrokeType.freehand:
@@ -42,28 +51,33 @@ class DrawingPainter extends CustomPainter {
   void _drawFreehand(Canvas canvas, Stroke stroke, Paint paint) {
     if (stroke.points.length == 1) {
       canvas.drawCircle(stroke.points.first, stroke.width / 2, paint);
+    } else if (stroke.points.length == 2) {
+      // 2 nokta varsa düz çizgi çiz
+      canvas.drawLine(stroke.points.first, stroke.points.last, paint);
     } else {
+      // 3 veya daha fazla nokta için smooth path
       final path = Path();
       path.moveTo(stroke.points.first.dx, stroke.points.first.dy);
 
-      if (stroke.points.length == 2) {
-        path.lineTo(stroke.points[1].dx, stroke.points[1].dy);
-      } else {
-        for (int i = 1; i < stroke.points.length; i++) {
-          final current = stroke.points[i];
-          final previous = stroke.points[i - 1];
-          final controlPoint = Offset(
-            (previous.dx + current.dx) / 2,
-            (previous.dy + current.dy) / 2,
-          );
-          path.quadraticBezierTo(
-            previous.dx,
-            previous.dy,
-            controlPoint.dx,
-            controlPoint.dy,
-          );
-        }
+      for (int i = 1; i < stroke.points.length - 1; i++) {
+        final current = stroke.points[i];
+        final next = stroke.points[i + 1];
+        final controlPoint = Offset(
+          (current.dx + next.dx) / 2,
+          (current.dy + next.dy) / 2,
+        );
+        path.quadraticBezierTo(
+          current.dx,
+          current.dy,
+          controlPoint.dx,
+          controlPoint.dy,
+        );
       }
+
+      // Son noktaya çiz
+      final lastPoint = stroke.points.last;
+      path.lineTo(lastPoint.dx, lastPoint.dy);
+
       canvas.drawPath(path, paint);
     }
   }

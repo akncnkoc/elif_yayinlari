@@ -27,6 +27,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       mouse: true,
       eraser: false,
       pencil: false,
+      highlighter: false,
       grab: false,
       shape: false,
       selection: false,
@@ -159,13 +160,18 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
 
   Offset _transformPoint(Offset point) {
     // Transform matrisini tersine çevirerek zoom/pan dönüşümünü geri al
-    final Matrix4 invertedMatrix = Matrix4.inverted(
-      transformationController.value,
-    );
-    final Vector3 transformed = invertedMatrix.transform3(
-      Vector3(point.dx, point.dy, 0),
-    );
-    return Offset(transformed.x, transformed.y);
+    try {
+      final Matrix4 invertedMatrix = Matrix4.inverted(
+        transformationController.value,
+      );
+      final Vector3 transformed = invertedMatrix.transform3(
+        Vector3(point.dx, point.dy, 0),
+      );
+      return Offset(transformed.x, transformed.y);
+    } catch (e) {
+      // Eğer matrix invert edilemezse, orijinal noktayı döndür
+      return point;
+    }
   }
 
   void _handleScaleStart(ScaleStartDetails details) {
@@ -177,10 +183,19 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
         _isPanning = true;
         _panStartPosition = details.localFocalPoint;
         _panStartTime = DateTime.now();
-      } else if (tool.shape) {
-        _startShape(_transformPoint(details.localFocalPoint));
-      } else if (tool.pencil || tool.eraser) {
-        _startStroke(_transformPoint(details.localFocalPoint));
+      } else if (tool.shape || tool.pencil || tool.eraser || tool.highlighter) {
+        // Eğer rotation aktifse çizim yapma
+        if (_rotationAngle != 0.0) {
+          // Kullanıcıya rotation'ı sıfırlamasını söyle
+          return;
+        }
+        // GestureDetector InteractiveViewer'ın içinde olduğu için
+        // localFocalPoint zaten PDF'in lokal koordinatlarında
+        if (tool.shape) {
+          _startShape(details.localFocalPoint);
+        } else {
+          _startStroke(details.localFocalPoint);
+        }
       }
       // Selection artık GestureDetector'dan değil Listener'dan yönetiliyor
     }
@@ -192,6 +207,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     if (details.pointerCount == 2 &&
         !tool.pencil &&
         !tool.eraser &&
+        !tool.highlighter &&
         !tool.shape &&
         !tool.selection) {
       final rotationDelta = details.rotation - _lastRotation;
@@ -213,9 +229,11 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
           );
         transformationController.value = newTransform;
       } else if (tool.shape) {
-        _updateShape(_transformPoint(details.localFocalPoint));
-      } else if (tool.pencil || tool.eraser) {
-        _updateStroke(_transformPoint(details.localFocalPoint));
+        _updateShape(details.localFocalPoint);
+      } else if (tool.pencil || tool.eraser || tool.highlighter) {
+        // GestureDetector InteractiveViewer'ın içinde olduğu için
+        // localFocalPoint zaten PDF'in lokal koordinatlarında
+        _updateStroke(details.localFocalPoint);
       }
       // Selection artık GestureDetector'dan değil Listener'dan yönetiliyor
     }
@@ -267,7 +285,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       _panStartTime = null;
     } else if (tool.shape) {
       _endShape();
-    } else if (tool.pencil || tool.eraser) {
+    } else if (tool.pencil || tool.eraser || tool.highlighter) {
       _endStroke();
     }
     // Selection artık GestureDetector'dan değil Listener'dan yönetiliyor
@@ -341,7 +359,12 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
         return;
       }
 
-      _activeStroke = Stroke(color: tool.color, width: tool.width, erase: false);
+      _activeStroke = Stroke(
+        color: tool.color,
+        width: tool.width,
+        erase: false,
+        isHighlighter: tool.highlighter,
+      );
       _activeStroke!.points.add(position);
       _strokes.add(_activeStroke!);
 
@@ -358,7 +381,20 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       _activeStroke?.points.add(position);
       _eraseAt(position, tool.width);
     } else {
-      _activeStroke?.points.add(position);
+      // Eğer son nokta varsa ve çok yakınsa ekleme (jitter'ı önle)
+      if (_activeStroke != null && _activeStroke!.points.isNotEmpty) {
+        final lastPoint = _activeStroke!.points.last;
+        final distance = (position - lastPoint).distance;
+
+        // Minimum mesafe: highlighter için daha düşük, normal kalem için standart
+        final minDistance = tool.highlighter ? 0.5 : 1.0;
+
+        if (distance > minDistance) {
+          _activeStroke!.points.add(position);
+        }
+      } else {
+        _activeStroke?.points.add(position);
+      }
     }
 
     _repaintNotifier.value++;
@@ -618,6 +654,19 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   void setPencil(bool value) {
     toolNotifier.value = toolNotifier.value.copyWith(
       pencil: value,
+      highlighter: false,
+      eraser: false,
+      grab: false,
+      shape: false,
+      mouse: false,
+      selection: false,
+    );
+  }
+
+  void setHighlighter(bool value) {
+    toolNotifier.value = toolNotifier.value.copyWith(
+      highlighter: value,
+      pencil: false,
       eraser: false,
       grab: false,
       shape: false,
@@ -630,6 +679,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     toolNotifier.value = toolNotifier.value.copyWith(
       eraser: value,
       pencil: false,
+      highlighter: false,
       grab: false,
       shape: false,
       mouse: false,
@@ -643,6 +693,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       mouse: value,
       grab: false,
       pencil: false,
+      highlighter: false,
       eraser: false,
       shape: false,
       selection: false,
@@ -653,6 +704,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     toolNotifier.value = toolNotifier.value.copyWith(
       mouse: value,
       pencil: false,
+      highlighter: false,
       eraser: false,
       grab: false,
       shape: false,
@@ -664,6 +716,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     toolNotifier.value = toolNotifier.value.copyWith(
       shape: value,
       pencil: false,
+      highlighter: false,
       eraser: false,
       grab: false,
       mouse: false,
@@ -676,6 +729,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       selectedShape: shapeType,
       shape: true,
       pencil: false,
+      highlighter: false,
       eraser: false,
       grab: false,
       mouse: false,
@@ -686,7 +740,8 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   void setColor(Color value) {
     toolNotifier.value = toolNotifier.value.copyWith(
       color: value,
-      pencil: !toolNotifier.value.shape,
+      pencil: !toolNotifier.value.shape && !toolNotifier.value.highlighter,
+      highlighter: toolNotifier.value.highlighter,
       shape: toolNotifier.value.shape,
       eraser: false,
       grab: false,
@@ -704,6 +759,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       selection: value,
       mouse: false,
       pencil: false,
+      highlighter: false,
       eraser: false,
       grab: false,
       shape: false,
@@ -816,6 +872,8 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
               ? SystemMouseCursors.grab
               : tool.pencil
               ? SystemMouseCursors.precise
+              : tool.highlighter
+              ? SystemMouseCursors.precise
               : tool.shape
               ? SystemMouseCursors.cell
               : tool.eraser
@@ -831,7 +889,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                 maxScale: _maxZoom,
                 boundaryMargin: const EdgeInsets.all(20),
                 panEnabled: tool.grab || tool.mouse,
-                scaleEnabled: true,
+                scaleEnabled: !_isDrawing && (tool.grab || tool.mouse), // Çizim sırasında scale'i devre dışı bırak
                 child: GestureDetector(
                   onScaleStart: _handleScaleStart,
                   onScaleUpdate: _handleScaleUpdate,

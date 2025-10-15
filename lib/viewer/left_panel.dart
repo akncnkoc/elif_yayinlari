@@ -329,6 +329,14 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
               scheme: scheme,
             ),
             _toolToggle(
+              icon: Icons.highlight,
+              tooltip: "Fosforlu Kalem (Highlighter)",
+              active: tool.highlighter,
+              onPressed: () => state.setHighlighter(true),
+              scheme: scheme,
+              activeColor: Colors.yellow.shade600,
+            ),
+            _toolToggle(
               icon: Icons.category,
               tooltip: "Şekiller",
               active: tool.shape,
