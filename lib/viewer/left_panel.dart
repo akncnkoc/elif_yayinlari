@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:icons_flutter/icons_flutter.dart';
 import 'package:pdfx/pdfx.dart';
-import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'pdf_viewer_with_drawing.dart';
 import 'tool_state.dart';
 import '../services/user_preferences_service.dart';
+
+// Import new components
+import '../features/drawing/presentation/widgets/tool_panel/tool_panel_components.dart';
+import '../features/pdf_viewer/presentation/widgets/page_navigation_buttons.dart';
 
 class FloatingLeftPanel extends StatefulWidget {
   final PdfController controller;
@@ -26,24 +29,18 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
   UserPreferencesService? _prefs;
   bool _isInitialized = false;
 
-  // Panel pozisyonu
+  // Panel state
   Offset _position = const Offset(20, 100);
-
-  // Panel boyutları
   double _panelWidth = 200.0;
   final double _minWidth = 150.0;
   final double _maxWidth = 400.0;
-
   double _panelHeight = 600.0;
   final double _minHeight = 400.0;
   final double _maxHeight = 900.0;
 
-  // Drag/resize state
   bool _isDragging = false;
   bool _isResizingRight = false;
   bool _isResizingBottom = false;
-
-  // Panel görünürlüğü
   bool _isCollapsed = false;
   bool _isPinned = false;
 
@@ -82,114 +79,6 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
     await _prefs?.setLeftPanelPinned(value);
   }
 
-  void _showColorPicker(
-    BuildContext context,
-    Color currentColor,
-    Function(Color) onColorChanged,
-  ) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        Color tempColor = currentColor;
-        return AlertDialog(
-          title: const Text('Renk Seçin'),
-          content: SingleChildScrollView(
-            child: ColorPicker(
-              pickerColor: currentColor,
-              onColorChanged: (Color color) {
-                tempColor = color;
-              },
-              pickerAreaHeightPercent: 0.8,
-              displayThumbColor: true,
-              enableAlpha: false,
-              labelTypes: const [],
-            ),
-          ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('İptal'),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            TextButton(
-              child: const Text('Seç'),
-              onPressed: () {
-                onColorChanged(tempColor);
-                Navigator.of(context).pop();
-              },
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildPanelHeader(ColorScheme scheme) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(16),
-          topRight: Radius.circular(16),
-        ),
-      ),
-      child: _isCollapsed
-          ? Center(
-              child: Icon(
-                Icons.drag_indicator,
-                size: 20,
-                color: scheme.onSurfaceVariant,
-              ),
-            )
-          : Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Araç Paneli',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Pin butonu
-                    IconButton(
-                      icon: Icon(
-                        _isPinned ? Icons.push_pin : Icons.push_pin_outlined,
-                        size: 18,
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onPressed: () {
-                        setState(() => _isPinned = !_isPinned);
-                        _savePinned(_isPinned);
-                      },
-                      tooltip: _isPinned ? 'Sabitlemeyi Kaldır' : 'Sabitle',
-                    ),
-                    const SizedBox(width: 4),
-                    // Collapse butonu
-                    IconButton(
-                      icon: const Icon(Icons.remove, size: 18),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                      onPressed: () {
-                        setState(() => _isCollapsed = true);
-                        _saveCollapsed(true);
-                      },
-                      tooltip: 'Küçült',
-                    ),
-                  ],
-                ),
-              ],
-            ),
-    );
-  }
-
   Widget _buildCollapsedContent(
     ToolState tool,
     ColorScheme scheme,
@@ -200,7 +89,7 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Expand butonu
+          // Expand button
           IconButton(
             icon: const Icon(Icons.menu, size: 20),
             onPressed: () {
@@ -212,153 +101,56 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
             constraints: const BoxConstraints(),
           ),
           const Divider(height: 8),
-          // Navigation butonları
-          IconButton(
-            icon: const Icon(Icons.first_page, size: 18),
-            onPressed: () => widget.controller.jumpToPage(1),
-            tooltip: 'İlk sayfa',
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_left, size: 18),
-            onPressed: () => widget.controller.previousPage(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeIn,
-            ),
-            tooltip: 'Önceki sayfa',
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right, size: 18),
-            onPressed: () => widget.controller.nextPage(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeIn,
-            ),
-            tooltip: 'Sonraki sayfa',
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
-          ),
-          IconButton(
-            icon: const Icon(Icons.last_page, size: 18),
-            onPressed: () => widget.controller.jumpToPage(
-              widget.controller.pagesCount ?? 1,
-            ),
-            tooltip: 'Son sayfa',
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
-          ),
+
+          // Navigation (compact)
+          PageNavigationButtons(controller: widget.controller, isCompact: true),
+
           const Divider(height: 8),
-          // Araçlar
-          IconButton(
-            icon: Icon(
-              Icons.pan_tool,
-              size: 18,
-              color: tool.mouse || tool.grab ? scheme.primary : null,
-            ),
-            onPressed: () => state.setMouse(true),
+
+          // Tools (compact)
+          ToolButtonCompact(
+            icon: Icons.pan_tool,
             tooltip: 'Kaydır',
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
+            isSelected: tool.mouse || tool.grab,
+            onPressed: () => state.setMouse(true),
           ),
-          IconButton(
-            icon: Icon(
-              Icons.brush,
-              size: 18,
-              color: tool.pencil ? scheme.primary : null,
-            ),
-            onPressed: () => state.setPencil(true),
+          ToolButtonCompact(
+            icon: Icons.brush,
             tooltip: 'Kalem',
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
+            isSelected: tool.pencil,
+            onPressed: () => state.setPencil(true),
           ),
-          IconButton(
-            icon: Icon(
-              Icons.highlight,
-              size: 18,
-              color: tool.highlighter ? Colors.yellow.shade600 : null,
-            ),
-            onPressed: () => state.setHighlighter(true),
+          ToolButtonCompact(
+            icon: Icons.highlight,
             tooltip: 'Highlighter',
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
+            isSelected: tool.highlighter,
+            selectedColor: Colors.yellow.shade600,
+            onPressed: () => state.setHighlighter(true),
           ),
-          IconButton(
-            icon: Icon(
-              Icons.cleaning_services,
-              size: 18,
-              color: tool.eraser ? scheme.primary : null,
-            ),
-            onPressed: () => state.setEraser(true),
+          ToolButtonCompact(
+            icon: Icons.cleaning_services,
             tooltip: 'Silgi',
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(),
+            isSelected: tool.eraser,
+            onPressed: () => state.setEraser(true),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildPanelContent(
+  Widget _buildExpandedContent(
     ToolState tool,
     ColorScheme scheme,
     PdfViewerWithDrawingState state,
   ) {
-    if (_isCollapsed) {
-      return _buildCollapsedContent(tool, scheme, state);
-    }
-
-    return Column(
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       children: [
-        // Scrollable content
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            children: [
-              // Navigation buttons
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          alignment: WrapAlignment.center,
-          children: [
-            _navButton(
-              icon: Icons.first_page,
-              tooltip: "İlk sayfa",
-              onPressed: () => widget.controller.jumpToPage(1),
-              scheme: scheme,
-            ),
-            _navButton(
-              icon: Icons.last_page,
-              tooltip: "Son sayfa",
-              onPressed: () => widget.controller.jumpToPage(
-                widget.controller.pagesCount ?? 1,
-              ),
-              scheme: scheme,
-            ),
-            _navButton(
-              icon: Icons.chevron_left,
-              tooltip: "Önceki sayfa",
-              onPressed: () => widget.controller.previousPage(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeIn,
-              ),
-              scheme: scheme,
-            ),
-            _navButton(
-              icon: Icons.chevron_right,
-              tooltip: "Sonraki sayfa",
-              onPressed: () => widget.controller.nextPage(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeIn,
-              ),
-              scheme: scheme,
-            ),
-          ],
-        ),
+        // Page Navigation
+        PageNavigationButtons(controller: widget.controller, isCompact: false),
         const Divider(height: 24),
 
-        // SORU ÇÖZ BUTONU
+        // AI Solve Button
         if (widget.onSolveProblem != null) ...[
           SizedBox(
             width: double.infinity,
@@ -379,12 +171,11 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
           const Divider(height: 24),
         ],
 
-        // Undo/Redo controls
-        const Center(
-          child: Text(
-            "Geri Al / İleri Al",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-          ),
+        // Undo/Redo
+        const Text(
+          'Geri Al / İleri Al',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
         ValueListenableBuilder<bool>(
@@ -393,30 +184,12 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
             return ValueListenableBuilder<bool>(
               valueListenable: state.canRedoNotifier,
               builder: (context, canRedo, _) {
-                return Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    _toolButton(
-                      icon: Icons.undo,
-                      tooltip: "Geri Al (Ctrl+Z)",
-                      onPressed: canUndo ? () => state.undo() : null,
-                      scheme: scheme,
-                      color: canUndo
-                          ? scheme.primaryContainer
-                          : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                    ),
-                    _toolButton(
-                      icon: Icons.redo,
-                      tooltip: "İleri Al (Ctrl+Y)",
-                      onPressed: canRedo ? () => state.redo() : null,
-                      scheme: scheme,
-                      color: canRedo
-                          ? scheme.primaryContainer
-                          : scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                    ),
-                  ],
+                return UndoRedoButtons(
+                  canUndo: canUndo,
+                  canRedo: canRedo,
+                  onUndo: () => state.undo(),
+                  onRedo: () => state.redo(),
+                  isCompact: false,
                 );
               },
             );
@@ -425,64 +198,10 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
         const Divider(height: 24),
 
         // Zoom controls
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          alignment: WrapAlignment.center,
-          children: [
-            _toolButton(
-              icon: Icons.zoom_in,
-              tooltip: "Yakınlaştır",
-              onPressed: () => state.zoomIn(),
-              scheme: scheme,
-            ),
-            _toolButton(
-              icon: Icons.zoom_out,
-              tooltip: "Uzaklaştır",
-              onPressed: () => state.zoomOut(),
-              scheme: scheme,
-            ),
-            _toolButton(
-              icon: Icons.fit_screen,
-              tooltip: "Zoom sıfırla",
-              onPressed: () => state.resetZoom(),
-              scheme: scheme,
-            ),
-          ],
-        ),
-        const Divider(height: 24),
-
-        // Rotation controls
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          alignment: WrapAlignment.center,
-          children: [
-            _toolButton(
-              icon: Icons.rotate_left,
-              tooltip: "Sola döndür",
-              onPressed: () => state.rotateLeft(),
-              scheme: scheme,
-            ),
-            _toolButton(
-              icon: Icons.rotate_right,
-              tooltip: "Sağa döndür",
-              onPressed: () => state.rotateRight(),
-              scheme: scheme,
-            ),
-            _toolButton(
-              icon: Icons.refresh,
-              tooltip: "Döndürmeyi sıfırla",
-              onPressed: () => state.resetRotation(),
-              scheme: scheme,
-            ),
-          ],
-        ),
-        const Divider(height: 24),
-
-        // Tools
-        const Center(
-          child: Text("Araçlar", style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text(
+          'Zoom',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
         Wrap(
@@ -490,181 +209,162 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
           runSpacing: 8,
           alignment: WrapAlignment.center,
           children: [
-            _toolToggle(
+            ToolButton(
+              icon: Icons.zoom_in,
+              tooltip: 'Yakınlaştır',
+              isSelected: false,
+              onPressed: () => state.zoomIn(),
+              size: 42,
+            ),
+            ToolButton(
+              icon: Icons.zoom_out,
+              tooltip: 'Uzaklaştır',
+              isSelected: false,
+              onPressed: () => state.zoomOut(),
+              size: 42,
+            ),
+            ToolButton(
+              icon: Icons.fit_screen,
+              tooltip: 'Zoom Sıfırla',
+              isSelected: false,
+              onPressed: () => state.resetZoom(),
+              size: 42,
+            ),
+          ],
+        ),
+        const Divider(height: 24),
+
+        // Rotation controls
+        const Text(
+          'Döndürme',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
+          children: [
+            ToolButton(
+              icon: Icons.rotate_left,
+              tooltip: 'Sola Döndür',
+              isSelected: false,
+              onPressed: () => state.rotateLeft(),
+              size: 42,
+            ),
+            ToolButton(
+              icon: Icons.rotate_right,
+              tooltip: 'Sağa Döndür',
+              isSelected: false,
+              onPressed: () => state.rotateRight(),
+              size: 42,
+            ),
+            ToolButton(
+              icon: Icons.refresh,
+              tooltip: 'Döndürmeyi Sıfırla',
+              isSelected: false,
+              onPressed: () => state.resetRotation(),
+              size: 42,
+            ),
+          ],
+        ),
+        const Divider(height: 24),
+
+        // Drawing Tools
+        const Text(
+          'Araçlar',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          alignment: WrapAlignment.center,
+          children: [
+            ToolButton(
               icon: Icons.pan_tool,
-              tooltip: "Kaydır / Swipe (Hızlı kaydırarak sayfa değiştir)",
-              active: tool.mouse || tool.grab,
+              tooltip: 'Kaydır / Swipe',
+              isSelected: tool.mouse || tool.grab,
               onPressed: () => state.setMouse(true),
-              scheme: scheme,
             ),
-            _toolToggle(
+            ToolButton(
               icon: Icons.brush,
-              tooltip: "Kalem",
-              active: tool.pencil,
+              tooltip: 'Kalem',
+              isSelected: tool.pencil,
               onPressed: () => state.setPencil(true),
-              scheme: scheme,
             ),
-            _toolToggle(
+            ToolButton(
               icon: Icons.highlight,
-              tooltip: "Fosforlu Kalem (Highlighter)",
-              active: tool.highlighter,
+              tooltip: 'Fosforlu Kalem',
+              isSelected: tool.highlighter,
+              selectedColor: Colors.yellow.shade600,
               onPressed: () => state.setHighlighter(true),
-              scheme: scheme,
-              activeColor: Colors.yellow.shade600,
             ),
-            _toolToggle(
+            ToolButton(
               icon: Icons.category,
-              tooltip: "Şekiller",
-              active: tool.shape,
+              tooltip: 'Şekiller',
+              isSelected: tool.shape,
               onPressed: () => state.setShape(true),
-              scheme: scheme,
             ),
-            _toolToggle(
+            ToolButton(
               icon: Icons.crop_free,
-              tooltip: "Alan Seç",
-              active: tool.selection,
+              tooltip: 'Alan Seç',
+              isSelected: tool.selection,
+              selectedColor: const Color(0xFF2196F3),
               onPressed: () => state.setSelection(!tool.selection),
-              scheme: scheme,
-              activeColor: const Color(0xFF2196F3),
             ),
-            _toolToggle(
+            ToolButton(
               icon: Icons.cleaning_services,
-              tooltip: "Silgi",
-              active: tool.eraser,
+              tooltip: 'Silgi',
+              isSelected: tool.eraser,
               onPressed: () => state.setEraser(true),
-              scheme: scheme,
             ),
-            _toolButton(
+            ToolButton(
               icon: FontAwesome.trash_o,
-              tooltip: "Sayfayı temizle",
+              tooltip: 'Sayfayı Temizle',
+              isSelected: false,
               onPressed: () => state.clearCurrentPage(),
-              scheme: scheme,
-              color: scheme.errorContainer,
             ),
           ],
         ),
 
-        // Shape selection
+        // Shape Selector
         if (tool.shape) ...[
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey[300]!),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _shapeButton(
-                      icon: Icons.crop_free,
-                      active: tool.selectedShape == ShapeType.rectangle,
-                      onPressed: () =>
-                          state.setSelectedShape(ShapeType.rectangle),
-                    ),
-                    _shapeButton(
-                      icon: Icons.circle_outlined,
-                      active: tool.selectedShape == ShapeType.circle,
-                      onPressed: () => state.setSelectedShape(ShapeType.circle),
-                    ),
-                  ],
-                ),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    _shapeButton(
-                      icon: Icons.remove,
-                      active: tool.selectedShape == ShapeType.line,
-                      onPressed: () => state.setSelectedShape(ShapeType.line),
-                    ),
-                    _shapeButton(
-                      icon: Icons.arrow_forward,
-                      active: tool.selectedShape == ShapeType.arrow,
-                      onPressed: () => state.setSelectedShape(ShapeType.arrow),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+          const SizedBox(height: 12),
+          ShapeSelector(
+            selectedShape: tool.selectedShape,
+            onShapeSelected: (shape) => state.setSelectedShape(shape),
           ),
         ],
 
-        const Divider(),
+        const Divider(height: 24),
 
-        Container(
-          padding: const EdgeInsets.all(4),
-          child: Wrap(
-            alignment: WrapAlignment.center,
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              Wrap(
-                alignment: WrapAlignment.center,
-                children: [
-                  const Center(
-                    child: Text(
-                      "Renk",
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  InkWell(
-                    onTap: () => _showColorPicker(context, tool.color, (color) {
-                      state.setColor(color);
-                    }),
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: tool.color,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: scheme.outline, width: 2),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.2),
-                            blurRadius: 8,
-                            offset: const Offset(0, 0),
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Icon(
-                          Icons.palette,
-                          color: tool.color.computeLuminance() > 0.5
-                              ? Colors.black
-                              : Colors.white,
-                          size: 24,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              Wrap(
-                alignment: WrapAlignment.center,
-                children: [
-                  const Center(
-                    child: Text(
-                      "Kalınlık",
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  Slider(
-                    value: tool.width,
-                    min: 2,
-                    max: 10,
-                    divisions: 8,
-                    onChanged: (v) => state.setWidth(v),
-                  ),
-                ],
-              ),
-            ],
+        // Color Picker
+        const Text(
+          'Renk',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: ColorPickerButton(
+            currentColor: tool.color,
+            onColorChanged: (color) => state.setColor(color),
+            size: 50,
           ),
         ),
-            ],
-          ),
+
+        const SizedBox(height: 16),
+
+        // Width Slider
+        WidthSlider(
+          width: tool.width,
+          min: 2.0,
+          max: 10.0,
+          onChanged: (value) => state.setWidth(value),
+          label: 'Kalınlık',
         ),
       ],
     );
@@ -715,375 +415,203 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: _isCollapsed
-                        ? Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              // Draggable Header (collapsed)
-                              GestureDetector(
-                                onPanStart: _isPinned
-                                    ? null
-                                    : (details) {
-                                        setState(() => _isDragging = true);
-                                      },
-                                onPanUpdate: _isPinned
-                                    ? null
-                                    : (details) {
-                                        setState(() {
-                                          _position = Offset(
-                                            (_position.dx + details.delta.dx)
-                                                .clamp(
-                                              0,
-                                              MediaQuery.of(context).size.width -
-                                                  60,
-                                            ),
-                                            (_position.dy + details.delta.dy)
-                                                .clamp(
-                                              0,
-                                              MediaQuery.of(context).size.height -
-                                                  100,
-                                            ),
-                                          );
-                                        });
-                                      },
-                                onPanEnd: _isPinned
-                                    ? null
-                                    : (details) {
-                                        setState(() => _isDragging = false);
-                                        _savePosition();
-                                      },
-                                child: _buildPanelHeader(scheme),
-                              ),
-                              // Panel Content (collapsed)
-                              _buildPanelContent(tool, scheme, state),
-                            ],
-                          )
-                        : Column(
-                            children: [
-                              // Draggable Header
-                              GestureDetector(
-                                onPanStart: _isPinned
-                                    ? null
-                                    : (details) {
-                                        setState(() => _isDragging = true);
-                                      },
-                                onPanUpdate: _isPinned
-                                    ? null
-                                    : (details) {
-                                        setState(() {
-                                          _position = Offset(
-                                            (_position.dx + details.delta.dx)
-                                                .clamp(
-                                              0,
-                                              MediaQuery.of(context).size.width -
-                                                  _panelWidth,
-                                            ),
-                                            (_position.dy + details.delta.dy)
-                                                .clamp(
-                                              0,
-                                              MediaQuery.of(context).size.height -
-                                                  100,
-                                            ),
-                                          );
-                                        });
-                                      },
-                                onPanEnd: _isPinned
-                                    ? null
-                                    : (details) {
-                                        setState(() => _isDragging = false);
-                                        _savePosition();
-                                      },
-                                child: _buildPanelHeader(scheme),
-                              ),
-                              // Panel Content
-                              Expanded(
-                                child: _buildPanelContent(tool, scheme, state),
-                              ),
-                            ],
+                    child: Column(
+                      mainAxisSize: _isCollapsed
+                          ? MainAxisSize.min
+                          : MainAxisSize.max,
+                      children: [
+                        // Header (draggable)
+                        GestureDetector(
+                          onPanStart: _isPinned
+                              ? null
+                              : (details) => setState(() => _isDragging = true),
+                          onPanUpdate: _isPinned
+                              ? null
+                              : (details) {
+                                  setState(() {
+                                    _position = Offset(
+                                      (_position.dx + details.delta.dx).clamp(
+                                        0,
+                                        MediaQuery.of(context).size.width -
+                                            (_isCollapsed ? 60 : _panelWidth),
+                                      ),
+                                      (_position.dy + details.delta.dy).clamp(
+                                        0,
+                                        MediaQuery.of(context).size.height -
+                                            100,
+                                      ),
+                                    );
+                                  });
+                                },
+                          onPanEnd: _isPinned
+                              ? null
+                              : (details) {
+                                  setState(() => _isDragging = false);
+                                  _savePosition();
+                                },
+                          child: PanelHeader(
+                            isCollapsed: _isCollapsed,
+                            isPinned: _isPinned,
+                            onTogglePin: () {
+                              setState(() => _isPinned = !_isPinned);
+                              _savePinned(_isPinned);
+                            },
+                            onCollapse: () {
+                              setState(() => _isCollapsed = true);
+                              _saveCollapsed(true);
+                            },
+                            onExpand: () {
+                              setState(() => _isCollapsed = false);
+                              _saveCollapsed(false);
+                            },
                           ),
+                        ),
+
+                        // Content
+                        if (_isCollapsed)
+                          _buildCollapsedContent(tool, scheme, state)
+                        else
+                          Expanded(
+                            child: _buildExpandedContent(tool, scheme, state),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
             ),
 
-            // Right resize handle (sağ ortada, touch için)
-            if (!_isCollapsed)
-              Positioned(
+            // Resize handles
+            if (!_isCollapsed) ...[
+              // Right resize handle
+              _buildResizeHandle(
                 left: _position.dx + _panelWidth + 6,
                 top: _position.dy + (_panelHeight / 2) - 35,
-                child: GestureDetector(
-                  onPanStart: (details) {
-                    setState(() => _isResizingRight = true);
-                  },
-                  onPanUpdate: (details) {
-                    setState(() {
-                      _panelWidth = (_panelWidth + details.delta.dx).clamp(
-                        _minWidth,
-                        _maxWidth,
-                      );
-                    });
-                  },
-                  onPanEnd: (details) {
-                    setState(() => _isResizingRight = false);
-                    _saveSize();
-                  },
-                  child: Container(
-                    width: 12,
-                    height: 70,
-                    decoration: BoxDecoration(
-                      color: _isResizingRight
-                          ? scheme.primary
-                          : scheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: scheme.outlineVariant,
-                        width: 1.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.15),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 3,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: scheme.onSurfaceVariant.withValues(
-                                alpha: 0.6,
-                              ),
-                              borderRadius: BorderRadius.circular(1.5),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            width: 3,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: scheme.onSurfaceVariant.withValues(
-                                alpha: 0.6,
-                              ),
-                              borderRadius: BorderRadius.circular(1.5),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Container(
-                            width: 3,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: scheme.onSurfaceVariant.withValues(
-                                alpha: 0.6,
-                              ),
-                              borderRadius: BorderRadius.circular(1.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+                width: 12,
+                height: 70,
+                isActive: _isResizingRight,
+                isHorizontal: false,
+                scheme: scheme,
+                onPanStart: () => setState(() => _isResizingRight = true),
+                onPanUpdate: (delta) {
+                  setState(() {
+                    _panelWidth = (_panelWidth + delta.dx).clamp(
+                      _minWidth,
+                      _maxWidth,
+                    );
+                  });
+                },
+                onPanEnd: () {
+                  setState(() => _isResizingRight = false);
+                  _saveSize();
+                },
               ),
 
-            // Bottom resize handle (alt ortada, touch için)
-            if (!_isCollapsed)
-              Positioned(
+              // Bottom resize handle
+              _buildResizeHandle(
                 left: _position.dx + (_panelWidth / 2) - 35,
                 top: _position.dy + _panelHeight + 6,
-                child: GestureDetector(
-                  onPanStart: (details) {
-                    setState(() => _isResizingBottom = true);
-                  },
-                  onPanUpdate: (details) {
-                    setState(() {
-                      _panelHeight = (_panelHeight + details.delta.dy).clamp(
-                        _minHeight,
-                        _maxHeight,
-                      );
-                    });
-                  },
-                  onPanEnd: (details) {
-                    setState(() => _isResizingBottom = false);
-                    _saveSize();
-                  },
-                  child: Container(
-                    width: 70,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      color: _isResizingBottom
-                          ? scheme.primary
-                          : scheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(
-                        color: scheme.outlineVariant,
-                        width: 1.5,
-                      ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.15),
-                          blurRadius: 6,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 3,
-                            decoration: BoxDecoration(
-                              color: scheme.onSurfaceVariant.withValues(
-                                alpha: 0.6,
-                              ),
-                              borderRadius: BorderRadius.circular(1.5),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Container(
-                            width: 8,
-                            height: 3,
-                            decoration: BoxDecoration(
-                              color: scheme.onSurfaceVariant.withValues(
-                                alpha: 0.6,
-                              ),
-                              borderRadius: BorderRadius.circular(1.5),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Container(
-                            width: 8,
-                            height: 3,
-                            decoration: BoxDecoration(
-                              color: scheme.onSurfaceVariant.withValues(
-                                alpha: 0.6,
-                              ),
-                              borderRadius: BorderRadius.circular(1.5),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+                width: 70,
+                height: 12,
+                isActive: _isResizingBottom,
+                isHorizontal: true,
+                scheme: scheme,
+                onPanStart: () => setState(() => _isResizingBottom = true),
+                onPanUpdate: (delta) {
+                  setState(() {
+                    _panelHeight = (_panelHeight + delta.dy).clamp(
+                      _minHeight,
+                      _maxHeight,
+                    );
+                  });
+                },
+                onPanEnd: () {
+                  setState(() => _isResizingBottom = false);
+                  _saveSize();
+                },
               ),
+            ],
           ],
         );
       },
     );
   }
 
-  // Button helpers (aynı)
-  Widget _navButton({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback onPressed,
+  Widget _buildResizeHandle({
+    required double left,
+    required double top,
+    required double width,
+    required double height,
+    required bool isActive,
+    required bool isHorizontal,
     required ColorScheme scheme,
+    required VoidCallback onPanStart,
+    required Function(Offset) onPanUpdate,
+    required VoidCallback onPanEnd,
   }) {
-    return Tooltip(
-      message: tooltip,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+    return Positioned(
+      left: left,
+      top: top,
+      child: GestureDetector(
+        onPanStart: (_) => onPanStart(),
+        onPanUpdate: (details) => onPanUpdate(details.delta),
+        onPanEnd: (_) => onPanEnd(),
+        child: Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            color: isActive ? scheme.primary : scheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: scheme.outlineVariant, width: 1.5),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          backgroundColor: scheme.surfaceContainerHighest,
-          foregroundColor: scheme.primary,
-          elevation: 0,
-        ),
-        child: Icon(icon, size: 20),
-      ),
-    );
-  }
-
-  Widget _toolButton({
-    required IconData icon,
-    required String tooltip,
-    required VoidCallback? onPressed,
-    required ColorScheme scheme,
-    Color? color,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+          child: Center(
+            child: isHorizontal
+                ? Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(
+                      3,
+                      (i) => Padding(
+                        padding: EdgeInsets.only(left: i > 0 ? 4 : 0),
+                        child: Container(
+                          width: 8,
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: scheme.onSurfaceVariant.withValues(
+                              alpha: 0.6,
+                            ),
+                            borderRadius: BorderRadius.circular(1.5),
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                : Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: List.generate(
+                      3,
+                      (i) => Padding(
+                        padding: EdgeInsets.only(top: i > 0 ? 4 : 0),
+                        child: Container(
+                          width: 3,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: scheme.onSurfaceVariant.withValues(
+                              alpha: 0.6,
+                            ),
+                            borderRadius: BorderRadius.circular(1.5),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
           ),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          backgroundColor: color ?? scheme.surfaceContainerHighest,
-          foregroundColor: onPressed == null
-              ? scheme.onSurface.withValues(alpha: 0.3)
-              : scheme.onSurface,
-          elevation: 0,
-          disabledBackgroundColor: color ?? scheme.surfaceContainerHighest,
-          disabledForegroundColor: scheme.onSurface.withValues(alpha: 0.3),
-        ),
-        child: Icon(icon, size: 20),
-      ),
-    );
-  }
-
-  Widget _toolToggle({
-    required IconData icon,
-    required String tooltip,
-    required bool active,
-    required VoidCallback onPressed,
-    required ColorScheme scheme,
-    Color? activeColor,
-    Color? inactiveColor,
-  }) {
-    return Tooltip(
-      message: tooltip,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: active
-              ? (activeColor ?? scheme.primary)
-              : (inactiveColor ?? scheme.surfaceContainerHighest),
-          foregroundColor: active ? scheme.onPrimary : scheme.onSurface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          elevation: 0,
-        ),
-        child: Icon(icon, size: 20),
-      ),
-    );
-  }
-
-  Widget _shapeButton({
-    required IconData icon,
-    required bool active,
-    required VoidCallback onPressed,
-  }) {
-    final scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: onPressed,
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: active
-              ? scheme.primary.withValues(alpha: 0.12)
-              : scheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(8),
-          border: active ? Border.all(color: scheme.primary, width: 2) : null,
-        ),
-        child: Icon(
-          icon,
-          color: active ? scheme.primary : scheme.onSurfaceVariant,
-          size: 20,
         ),
       ),
     );

@@ -6,6 +6,7 @@ import 'left_panel.dart';
 import '../soru_cozucu_service.dart';
 import 'calculator_widget.dart';
 import 'scratchpad_widget.dart';
+import '../models/crop_data.dart';
 
 // Components
 import 'components/pdf_viewer_top_bar.dart';
@@ -20,8 +21,16 @@ import 'services/image_capture_service.dart';
 class PdfDrawingViewerPage extends StatefulWidget {
   final String pdfPath;
   final VoidCallback? onBack;
+  final CropData? cropData;
+  final String? zipFilePath;
 
-  const PdfDrawingViewerPage({super.key, required this.pdfPath, this.onBack});
+  const PdfDrawingViewerPage({
+    super.key,
+    required this.pdfPath,
+    this.onBack,
+    this.cropData,
+    this.zipFilePath,
+  });
 
   @override
   State<PdfDrawingViewerPage> createState() => _PdfDrawingViewerPageState();
@@ -313,6 +322,8 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                   child: PdfViewerWithDrawing(
                     key: _drawingKey,
                     controller: _pdfController,
+                    cropData: widget.cropData,
+                    zipFilePath: widget.zipFilePath,
                   ),
                 ),
 

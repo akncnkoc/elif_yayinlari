@@ -14,11 +14,6 @@ import 'page_time_tracker.dart';
 import '../models/crop_data.dart';
 import 'dart:math' show cos, sin;
 
-// Import new components and utilities
-import '../core/constants/app_constants.dart';
-import '../core/utils/matrix_utils.dart' as custom_matrix;
-import '../features/pdf_viewer/presentation/widgets/dialogs/image_gallery_dialog.dart';
-
 class PdfViewerWithDrawing extends StatefulWidget {
   final PdfController controller;
   final CropData? cropData;
@@ -68,11 +63,8 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   int _currentPage = 1;
   final TransformationController transformationController =
       TransformationController();
-
-  // Use AppConstants for zoom limits
-  final double _minZoom = AppConstants.minZoom;
-  final double _maxZoom = AppConstants.maxZoom;
-
+  final double _minZoom = 0.5;
+  final double _maxZoom = 4.0;
   bool _isDrawing = false;
   bool _isPanning = false;
   double _rotationAngle = 0.0;
@@ -84,10 +76,8 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   Offset? _panStartPosition;
   Offset? _panLastPosition;
   DateTime? _panStartTime;
-
-  // Use AppConstants for gesture thresholds
-  static const double _swipeVelocityThreshold = AppConstants.swipeVelocityThreshold;
-  static const double _swipeDistanceThreshold = AppConstants.swipeDistanceThreshold;
+  static const double _swipeVelocityThreshold = 1000.0;
+  static const double _swipeDistanceThreshold = 100.0;
 
   final ValueNotifier<Rect?> selectedAreaNotifier = ValueNotifier<Rect?>(null);
   Offset? _selectionStart;
@@ -178,12 +168,20 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   /// Zaman takipçisini al (detaylı bilgi için)
   PageTimeTracker get timeTracker => _timeTracker;
 
-  // Use custom MatrixUtils for point transformation
   Offset _transformPoint(Offset point) {
-    return custom_matrix.MatrixUtils.transformPoint(
-      transformationController.value,
-      point,
-    );
+    // Transform matrisini tersine çevirerek zoom/pan dönüşümünü geri al
+    try {
+      final Matrix4 invertedMatrix = Matrix4.inverted(
+        transformationController.value,
+      );
+      final Vector3 transformed = invertedMatrix.transform3(
+        Vector3(point.dx, point.dy, 0),
+      );
+      return Offset(transformed.x, transformed.y);
+    } catch (e) {
+      // Eğer matrix invert edilemezse, orijinal noktayı döndür
+      return point;
+    }
   }
 
   void _handleScaleStart(ScaleStartDetails details) {
@@ -242,16 +240,29 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       final scaleChange = details.scale;
 
       // Zoom limitlerini kontrol et
-      final startScale = custom_matrix.MatrixUtils.getScale(_scaleStartTransform!);
+      final startScale = _scaleStartTransform!.getMaxScaleOnAxis();
       final newScale = (startScale * scaleChange).clamp(_minZoom, _maxZoom);
 
-      // Use custom MatrixUtils for zoom transformation
-      transformationController.value = custom_matrix.MatrixUtils.createZoomTransform(
-        focalPoint: _scaleStartFocalPoint!,
-        startTransform: _scaleStartTransform!,
-        startScale: startScale,
-        newScale: newScale,
-      );
+      // Focal point etrafında zoom yap - doğru yaklaşım
+      // Başlangıç transformundan translation değerlerini al
+      final startTranslation = _scaleStartTransform!.getTranslation();
+
+      // Focal point'i content space'e dönüştür
+      final focalPointX = _scaleStartFocalPoint!.dx;
+      final focalPointY = _scaleStartFocalPoint!.dy;
+
+      // Yeni translation hesapla: focal point sabit kalmalı
+      // Formula: newTranslation = focalPoint - (focalPoint - oldTranslation) * (newScale / oldScale)
+      final scaleRatio = newScale / startScale;
+      final newTranslationX = focalPointX - (focalPointX - startTranslation.x) * scaleRatio;
+      final newTranslationY = focalPointY - (focalPointY - startTranslation.y) * scaleRatio;
+
+      // Yeni transformation matrix
+      final newTransform = Matrix4.identity()
+        ..translateByVector3(Vector3(newTranslationX, newTranslationY, 0))
+        ..scaleByDouble(newScale, newScale, 1, 1);
+
+      transformationController.value = newTransform;
 
       return;
     }
@@ -436,9 +447,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
         final lastPoint = _activeStroke!.points.last;
         final distance = (transformedPosition - lastPoint).distance;
 
-        final minDistance = tool.highlighter
-            ? AppConstants.minHighlighterDistance
-            : AppConstants.minDrawingDistance;
+        final minDistance = tool.highlighter ? 0.5 : 1.0;
 
         if (distance > minDistance) {
           _activeStroke!.points.add(transformedPosition);
@@ -898,10 +907,9 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
 
       if (!mounted) return;
 
-      // Use new ImageGalleryDialog component
       showDialog(
         context: context,
-        builder: (context) => ImageGalleryDialog(
+        builder: (context) => _SwipeableImageDialog(
           imageList: imageList,
           initialIndex: initialIndex,
           cropData: widget.cropData!,

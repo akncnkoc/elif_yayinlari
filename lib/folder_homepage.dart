@@ -1,13 +1,17 @@
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:archive/archive.dart';
+import 'package:path_provider/path_provider.dart';
 import './dropbox/dropbox_service.dart';
 import './dropbox/dropbox_oauth.dart';
 import './dropbox/dropbox_auth_page.dart';
 import './dropbox/models.dart';
+import './models/crop_data.dart';
 import 'login_page.dart';
 import 'viewer/pdf_drawing_viewer_page.dart';
 import 'widgets/dropbox_pdf_thumbnail.dart';
@@ -126,7 +130,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf'],
+        allowedExtensions: ['book'],
         allowMultiple: false,
       );
 
@@ -134,20 +138,117 @@ class _FolderHomePageState extends State<FolderHomePage> {
         final filePath = result.files.single.path!;
         final fileName = result.files.single.name;
 
-        setState(() {
-          openTabs.add(
-            OpenPdfTab(
-              pdfPath: filePath,
-              title: fileName,
-              dropboxPath: null,
-            ),
-          );
-          currentTabIndex = openTabs.length - 1;
-          showFolderBrowser = false;
-        });
+        // Check if it's a book file
+        if (fileName.toLowerCase().endsWith('.book')) {
+          await _handleZipFile(filePath, fileName);
+        } else {
+          // It's a PDF file
+          setState(() {
+            openTabs.add(
+              OpenPdfTab(
+                pdfPath: filePath,
+                title: fileName,
+                dropboxPath: null,
+              ),
+            );
+            currentTabIndex = openTabs.length - 1;
+            showFolderBrowser = false;
+          });
+        }
       }
     } catch (e) {
-      _showError('Failed to open PDF: $e');
+      _showError('Failed to open file: $e');
+    }
+  }
+
+  Future<void> _handleZipFile(String zipPath, String zipFileName) async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // Read the book file (zip format)
+      final bytes = await File(zipPath).readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      print('📚 BOOK file opened: $zipFileName');
+      print('📚 Total files in archive: ${archive.length}');
+
+      // List all files in the archive
+      for (final file in archive) {
+        print('   - ${file.name} (${file.isFile ? "file" : "dir"})');
+      }
+
+      // Look for original.pdf and crop_coordinates.json in the archive
+      ArchiveFile? originalPdf;
+      ArchiveFile? cropCoordinatesJson;
+
+      for (final file in archive) {
+        if (file.isFile && file.name.toLowerCase() == 'original.pdf') {
+          originalPdf = file;
+          print('✅ Found original.pdf');
+        } else if (file.isFile && file.name.toLowerCase() == 'crop_coordinates.json') {
+          cropCoordinatesJson = file;
+          print('✅ Found crop_coordinates.json');
+        }
+      }
+
+      if (originalPdf == null) {
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        _showError('original.pdf not found in the book file');
+        return;
+      }
+
+      // Extract the PDF to a temporary location
+      final tempDir = await getTemporaryDirectory();
+      final pdfPath = '${tempDir.path}/original_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final pdfFile = File(pdfPath);
+      await pdfFile.writeAsBytes(originalPdf.content as List<int>);
+
+      // Parse crop coordinates data if available
+      CropData? cropData;
+      if (cropCoordinatesJson != null) {
+        try {
+          final jsonString = utf8.decode(cropCoordinatesJson.content as List<int>);
+          print('📄 JSON content (first 500 chars): ${jsonString.substring(0, jsonString.length > 500 ? 500 : jsonString.length)}');
+          cropData = CropData.fromJsonString(jsonString);
+          print('✅ Crop data loaded: ${cropData.totalDetected} objects detected');
+          print('✅ PDF file referenced: ${cropData.pdfFile}');
+          print('✅ Total pages: ${cropData.totalPages}');
+          print('✅ Total objects: ${cropData.objects.length}');
+        } catch (e, stackTrace) {
+          print('⚠️ Failed to parse crop_coordinates.json: $e');
+          print('Stack trace: $stackTrace');
+        }
+      } else {
+        print('⚠️ No crop_coordinates.json found in ZIP');
+      }
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      // Open the extracted PDF
+      setState(() {
+        openTabs.add(
+          OpenPdfTab(
+            pdfPath: pdfPath,
+            title: 'original.pdf (from $zipFileName)',
+            dropboxPath: null,
+            cropData: cropData,
+            zipFilePath: zipPath, // Zip dosyasının yolunu sakla
+          ),
+        );
+        currentTabIndex = openTabs.length - 1;
+        showFolderBrowser = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      _showError('Failed to extract PDF from zip: $e');
     }
   }
 
@@ -916,6 +1017,8 @@ class _FolderHomePageState extends State<FolderHomePage> {
                         key: ValueKey(openTabs[currentTabIndex].pdfPath),
                         pdfPath: openTabs[currentTabIndex].pdfPath,
                         onBack: () => closeTab(currentTabIndex),
+                        cropData: openTabs[currentTabIndex].cropData,
+                        zipFilePath: openTabs[currentTabIndex].zipFilePath,
                       ),
               ),
             ),

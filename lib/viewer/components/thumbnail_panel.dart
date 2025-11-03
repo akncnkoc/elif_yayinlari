@@ -40,16 +40,7 @@ class ThumbnailPanel extends StatelessWidget {
                 ),
               ),
             ),
-            child: Center(
-              child: Container(
-                width: 60,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-            ),
+            child: Center(child: Icon(Icons.swipe_down)),
           ),
         ),
         // Thumbnail List
