@@ -12,6 +12,7 @@ class PdfViewerTopBar extends StatelessWidget {
   final PageTimeTracker timeTracker;
   final String currentPageTime;
   final VoidCallback? onBack;
+  final VoidCallback? onGoToPage;
 
   const PdfViewerTopBar({
     super.key,
@@ -23,6 +24,7 @@ class PdfViewerTopBar extends StatelessWidget {
     required this.timeTracker,
     required this.currentPageTime,
     this.onBack,
+    this.onGoToPage,
   });
 
   @override
@@ -114,6 +116,47 @@ class PdfViewerTopBar extends StatelessWidget {
           ),
 
           const SizedBox(width: 16),
+
+          // Sayfaya Git Butonu
+          if (onGoToPage != null)
+            Tooltip(
+              message: 'Sayfaya Git',
+              child: InkWell(
+                onTap: onGoToPage,
+                borderRadius: BorderRadius.circular(20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.numbers,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Git',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          if (onGoToPage != null) const SizedBox(width: 16),
 
           // Zoom Seviyesi
           Container(

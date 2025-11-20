@@ -1,4 +1,5 @@
-import 'dart:io';
+import 'package:universal_io/io.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
@@ -22,11 +23,11 @@ void main() async {
       systemNavigationBarIconBrightness: Brightness.dark,
     ),
   );
-  if (Platform.isWindows) {
-    await windowManager.ensureInitialized();
-  }
 
-  if (Platform.isWindows) {
+  // Web'de window_manager kullanma
+  if (!kIsWeb && Platform.isWindows) {
+    await windowManager.ensureInitialized();
+
     final primaryDisplay = await screenRetriever.getPrimaryDisplay();
 
     final scaledWidth = primaryDisplay.size.width;
@@ -51,6 +52,7 @@ void main() async {
       await windowManager.focus();
     });
   }
+
   runApp(const AkilliTahtaProjeDemo());
 }
 
@@ -216,7 +218,7 @@ class AkilliTahtaProjeDemo extends StatelessWidget {
           behavior: SnackBarBehavior.floating,
         ),
       ),
-      home: const LoginGate(),
+      home: const FolderHomePage(),
     );
   }
 }

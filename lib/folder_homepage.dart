@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart' show kIsWeb, Uint8List;
 import 'package:window_manager/window_manager.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:archive/archive.dart';
@@ -89,7 +90,10 @@ class _FolderHomePageState extends State<FolderHomePage> {
 
   Future<void> _makeFullscreen() async {
     setState(() => isFullScreen = !isFullScreen);
-    await windowManager.setFullScreen(isFullScreen);
+    // Web'de window_manager yok
+    if (!kIsWeb) {
+      await windowManager.setFullScreen(isFullScreen);
+    }
   }
 
   Future<void> _loadFolder(String path) async {
@@ -132,9 +136,25 @@ class _FolderHomePageState extends State<FolderHomePage> {
         type: FileType.custom,
         allowedExtensions: ['book'],
         allowMultiple: false,
+        withData: kIsWeb, // Web'de bytes gerekli
       );
 
-      if (result != null && result.files.single.path != null) {
+      if (result != null && result.files.single.bytes != null) {
+        // Web platformu - bytes kullan
+        final bytes = result.files.single.bytes!;
+        final fileName = result.files.single.name;
+
+        // Check if it's a book file
+        if (fileName.toLowerCase().endsWith('.book')) {
+          await _handleZipFileFromBytes(bytes, fileName);
+        } else {
+          // PDF için web'de bytes'tan geçici dosya oluştur
+          if (kIsWeb) {
+            _showError('Web platformunda sadece .book dosyaları desteklenir');
+          }
+        }
+      } else if (result != null && result.files.single.path != null) {
+        // Mobil/Desktop platformu - path kullan
         final filePath = result.files.single.path!;
         final fileName = result.files.single.name;
 
@@ -158,6 +178,97 @@ class _FolderHomePageState extends State<FolderHomePage> {
       }
     } catch (e) {
       _showError('Failed to open file: $e');
+    }
+  }
+
+  // Web platformu için bytes kullanarak zip işleme
+  Future<void> _handleZipFileFromBytes(Uint8List bytes, String zipFileName) async {
+    try {
+      // Show loading indicator
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator()),
+      );
+
+      // Decode the book file (zip format)
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      print('📚 BOOK file opened: $zipFileName');
+      print('📚 Total files in archive: ${archive.length}');
+
+      // List all files in the archive
+      for (final file in archive) {
+        print('   - ${file.name} (${file.isFile ? "file" : "dir"})');
+      }
+
+      // Look for original.pdf and crop_coordinates.json in the archive
+      ArchiveFile? originalPdf;
+      ArchiveFile? cropCoordinatesJson;
+
+      for (final file in archive) {
+        if (file.isFile && file.name.toLowerCase() == 'original.pdf') {
+          originalPdf = file;
+          print('✅ Found original.pdf');
+        } else if (file.isFile && file.name.toLowerCase() == 'crop_coordinates.json') {
+          cropCoordinatesJson = file;
+          print('✅ Found crop_coordinates.json');
+        }
+      }
+
+      if (originalPdf == null) {
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        _showError('original.pdf not found in the book file');
+        return;
+      }
+
+      // Web'de dosya yazmadan doğrudan bytes kullanacağız
+      final pdfBytes = originalPdf.content as List<int>;
+
+      // Parse crop coordinates data if available
+      CropData? cropData;
+      if (cropCoordinatesJson != null) {
+        try {
+          final jsonString = utf8.decode(cropCoordinatesJson.content as List<int>);
+          print('📄 JSON content (first 500 chars): ${jsonString.substring(0, jsonString.length > 500 ? 500 : jsonString.length)}');
+          cropData = CropData.fromJsonString(jsonString);
+          print('✅ Crop data loaded: ${cropData.totalDetected} objects detected');
+          print('✅ PDF file referenced: ${cropData.pdfFile}');
+          print('✅ Total pages: ${cropData.totalPages}');
+          print('✅ Total objects: ${cropData.objects.length}');
+        } catch (e, stackTrace) {
+          print('⚠️ Failed to parse crop_coordinates.json: $e');
+          print('Stack trace: $stackTrace');
+        }
+      } else {
+        print('⚠️ No crop_coordinates.json found in ZIP');
+      }
+
+      if (!mounted) return;
+      Navigator.of(context).pop();
+
+      // Web için bytes'ı kullan - path yerine
+      // PDF viewer'a bytes eklemek gerekecek
+      setState(() {
+        openTabs.add(
+          OpenPdfTab(
+            pdfPath: 'web_${DateTime.now().millisecondsSinceEpoch}.pdf', // Placeholder
+            title: 'original.pdf (from $zipFileName)',
+            dropboxPath: null,
+            cropData: cropData,
+            zipFilePath: null, // Web'de zip path yok
+            pdfBytes: Uint8List.fromList(pdfBytes), // PDF bytes'ı sakla
+            zipBytes: bytes, // ZIP bytes'ı da sakla (crop resimleri için)
+          ),
+        );
+        currentTabIndex = openTabs.length - 1;
+        showFolderBrowser = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      _showError('Failed to extract PDF from zip: $e');
     }
   }
 
@@ -858,66 +969,66 @@ class _FolderHomePageState extends State<FolderHomePage> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
-            Card(
-              child: InkWell(
-                onTap: _selectDropboxStorage,
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .secondary
-                              .withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          Icons.cloud,
-                          size: 32,
-                          color: Theme.of(context).colorScheme.secondary,
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Dropbox',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Dropbox hesabınızdan dosya açın',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.arrow_forward_ios,
-                        size: 20,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            // const SizedBox(height: 16),
+            // Card(
+            //   child: InkWell(
+            //     onTap: _selectDropboxStorage,
+            //     borderRadius: BorderRadius.circular(16),
+            //     child: Container(
+            //       padding: const EdgeInsets.all(24),
+            //       child: Row(
+            //         children: [
+            //           Container(
+            //             padding: const EdgeInsets.all(16),
+            //             decoration: BoxDecoration(
+            //               color: Theme.of(context)
+            //                   .colorScheme
+            //                   .secondary
+            //                   .withValues(alpha: 0.1),
+            //               borderRadius: BorderRadius.circular(12),
+            //             ),
+            //             child: Icon(
+            //               Icons.cloud,
+            //               size: 32,
+            //               color: Theme.of(context).colorScheme.secondary,
+            //             ),
+            //           ),
+            //           const SizedBox(width: 20),
+            //           Expanded(
+            //             child: Column(
+            //               crossAxisAlignment: CrossAxisAlignment.start,
+            //               children: [
+            //                 Text(
+            //                   'Dropbox',
+            //                   style: TextStyle(
+            //                     fontSize: 18,
+            //                     fontWeight: FontWeight.w700,
+            //                     color: Theme.of(context).colorScheme.onSurface,
+            //                   ),
+            //                 ),
+            //                 const SizedBox(height: 4),
+            //                 Text(
+            //                   'Dropbox hesabınızdan dosya açın',
+            //                   style: TextStyle(
+            //                     fontSize: 14,
+            //                     color: Theme.of(context)
+            //                         .colorScheme
+            //                         .onSurfaceVariant,
+            //                   ),
+            //                 ),
+            //               ],
+            //             ),
+            //           ),
+            //           Icon(
+            //             Icons.arrow_forward_ios,
+            //             size: 20,
+            //             color: Theme.of(context).colorScheme.onSurfaceVariant,
+            //           ),
+            //         ],
+            //       ),
+            //     ),
+            //   ),
+            // ),
           ],
         ),
       ),
@@ -1019,6 +1130,8 @@ class _FolderHomePageState extends State<FolderHomePage> {
                         onBack: () => closeTab(currentTabIndex),
                         cropData: openTabs[currentTabIndex].cropData,
                         zipFilePath: openTabs[currentTabIndex].zipFilePath,
+                        pdfBytes: openTabs[currentTabIndex].pdfBytes,
+                        zipBytes: openTabs[currentTabIndex].zipBytes,
                       ),
               ),
             ),

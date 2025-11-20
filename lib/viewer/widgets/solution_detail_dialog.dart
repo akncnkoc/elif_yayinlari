@@ -1,17 +1,22 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../../models/crop_data.dart';
 import 'animation_player_widget.dart';
+import 'drawable_content_widget.dart';
+import '../tool_state.dart';
 
 class SolutionDetailDialog extends StatefulWidget {
   final CropItem crop;
   final String baseDirectory;
   final String? zipFilePath;
+  final Uint8List? zipBytes; // Web platformu için
 
   const SolutionDetailDialog({
     super.key,
     required this.crop,
     required this.baseDirectory,
     this.zipFilePath,
+    this.zipBytes,
   });
 
   @override
@@ -21,12 +26,85 @@ class SolutionDetailDialog extends StatefulWidget {
 class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
   final GlobalKey<AnimationPlayerWidgetState> _animationKey =
       GlobalKey<AnimationPlayerWidgetState>();
+  final GlobalKey<DrawableContentWidgetState> _drawableKey =
+      GlobalKey<DrawableContentWidgetState>();
+
+  // Drawing state
+  bool _isDrawingMode = false;
+  final ValueNotifier<ToolState> _toolNotifier = ValueNotifier<ToolState>(
+    ToolState(
+      mouse: true,
+      eraser: false,
+      pencil: false,
+      highlighter: false,
+      grab: false,
+      shape: false,
+      selection: false,
+      magnifier: false,
+      selectedShape: ShapeType.rectangle,
+      color: Colors.red,
+      width: 2.0,
+    ),
+  );
+
+  @override
+  void dispose() {
+    _toolNotifier.dispose();
+    super.dispose();
+  }
+
+  void _toggleDrawingMode() {
+    setState(() {
+      _isDrawingMode = !_isDrawingMode;
+      if (_isDrawingMode) {
+        // Enable pencil by default when entering drawing mode
+        _toolNotifier.value = _toolNotifier.value.copyWith(
+          pencil: true,
+          mouse: false,
+        );
+      } else {
+        // Return to mouse mode
+        _toolNotifier.value = _toolNotifier.value.copyWith(
+          pencil: false,
+          mouse: true,
+        );
+      }
+    });
+  }
+
+  void _selectTool(String tool) {
+    final currentTool = _toolNotifier.value;
+    _toolNotifier.value = currentTool.copyWith(
+      pencil: tool == 'pencil',
+      eraser: tool == 'eraser',
+      highlighter: tool == 'highlighter',
+      shape: tool == 'shape',
+      mouse: false,
+    );
+  }
+
+  void _selectShape(ShapeType shape) {
+    _toolNotifier.value = _toolNotifier.value.copyWith(
+      selectedShape: shape,
+    );
+  }
+
+  void _selectColor(Color color) {
+    _toolNotifier.value = _toolNotifier.value.copyWith(
+      color: color,
+    );
+  }
+
+  void _clearDrawing() {
+    _drawableKey.currentState?.clearDrawing();
+  }
+
+  void _undoDrawing() {
+    _drawableKey.currentState?.undo();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final hasSolution = widget.crop.solutionMetadata?.hasSolution ?? false;
-    final solutionType = widget.crop.solutionMetadata?.solutionType;
-
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
       child: Container(
@@ -85,23 +163,96 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left Side - Animation Player
+                  // Left Side - Animation Player with Drawing
                   Expanded(
                     flex: 2,
                     child: Container(
                       padding: const EdgeInsets.all(16),
-                      child: widget.crop.userSolution?.hasAnimationData == true &&
-                              widget.crop.userSolution?.drawingDataFile != null
-                          ? AnimationPlayerWidget(
-                              key: _animationKey,
-                              animationDataPath:
-                                  widget.crop.userSolution!.drawingDataFile!,
-                              baseDirectory: widget.baseDirectory,
-                              zipFilePath: widget.zipFilePath,
-                            )
-                          : const Center(
-                              child: Text('Animasyon verisi bulunamadı'),
+                      child: Stack(
+                        children: [
+                          // Content with drawing layer
+                          widget.crop.userSolution?.hasAnimationData == true &&
+                                  widget.crop.userSolution?.drawingDataFile != null
+                              ? DrawableContentWidget(
+                                  key: _drawableKey,
+                                  isDrawingEnabled: _isDrawingMode,
+                                  toolNotifier: _toolNotifier,
+                                  child: AnimationPlayerWidget(
+                                    key: _animationKey,
+                                    animationDataPath:
+                                        widget.crop.userSolution!.drawingDataFile!,
+                                    baseDirectory: widget.baseDirectory,
+                                    zipFilePath: widget.zipFilePath,
+                                    zipBytes: widget.zipBytes,
+                                  ),
+                                )
+                              : const Center(
+                                  child: Text('Animasyon verisi bulunamadı'),
+                                ),
+
+                          // Drawing toolbar (top-left)
+                          if (_isDrawingMode)
+                            Positioned(
+                              top: 8,
+                              left: 8,
+                              child: _buildDrawingToolbar(),
                             ),
+
+                          // Drawing mode toggle button (top-right)
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: Column(
+                              children: [
+                                FloatingActionButton.small(
+                                  onPressed: _toggleDrawingMode,
+                                  backgroundColor: _isDrawingMode
+                                      ? Theme.of(context).colorScheme.primary
+                                      : Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainerHighest,
+                                  child: Icon(
+                                    _isDrawingMode ? Icons.check : Icons.edit,
+                                    color: _isDrawingMode
+                                        ? Theme.of(context).colorScheme.onPrimary
+                                        : Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                  ),
+                                ),
+                                if (_isDrawingMode) ...[
+                                  const SizedBox(height: 8),
+                                  FloatingActionButton.small(
+                                    onPressed: _undoDrawing,
+                                    backgroundColor: Theme.of(context)
+                                        .colorScheme
+                                        .surfaceContainerHighest,
+                                    child: Icon(
+                                      Icons.undo,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  FloatingActionButton.small(
+                                    onPressed: _clearDrawing,
+                                    backgroundColor: Theme.of(context)
+                                        .colorScheme
+                                        .errorContainer,
+                                    child: Icon(
+                                      Icons.delete_outline,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onErrorContainer,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
 
@@ -658,6 +809,215 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
     return Colors.red;
   }
 
+  Widget _buildDrawingToolbar() {
+    return Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(12),
+      color: Theme.of(context).colorScheme.surface,
+      child: Padding(
+        padding: const EdgeInsets.all(8),
+        child: ValueListenableBuilder<ToolState>(
+          valueListenable: _toolNotifier,
+          builder: (context, tool, child) {
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Tools row
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Pencil
+                    _buildToolButton(
+                      icon: Icons.edit,
+                      isSelected: tool.pencil,
+                      onPressed: () => _selectTool('pencil'),
+                      tooltip: 'Kalem',
+                    ),
+                    const SizedBox(width: 4),
+                    // Highlighter
+                    _buildToolButton(
+                      icon: Icons.highlight,
+                      isSelected: tool.highlighter,
+                      onPressed: () => _selectTool('highlighter'),
+                      tooltip: 'Fosforlu Kalem',
+                    ),
+                    const SizedBox(width: 4),
+                    // Eraser
+                    _buildToolButton(
+                      icon: Icons.auto_fix_high,
+                      isSelected: tool.eraser,
+                      onPressed: () => _selectTool('eraser'),
+                      tooltip: 'Silgi',
+                    ),
+                    const SizedBox(width: 4),
+                    // Shape
+                    _buildToolButton(
+                      icon: Icons.rectangle,
+                      isSelected: tool.shape,
+                      onPressed: () => _selectTool('shape'),
+                      tooltip: 'Şekiller',
+                    ),
+                  ],
+                ),
+
+                // Shapes row (only shown when shape tool is selected)
+                if (tool.shape) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    height: 1,
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildShapeButton(
+                        icon: Icons.rectangle_outlined,
+                        isSelected: tool.selectedShape == ShapeType.rectangle,
+                        onPressed: () => _selectShape(ShapeType.rectangle),
+                        tooltip: 'Dikdörtgen',
+                      ),
+                      const SizedBox(width: 4),
+                      _buildShapeButton(
+                        icon: Icons.circle_outlined,
+                        isSelected: tool.selectedShape == ShapeType.circle,
+                        onPressed: () => _selectShape(ShapeType.circle),
+                        tooltip: 'Daire',
+                      ),
+                      const SizedBox(width: 4),
+                      _buildShapeButton(
+                        icon: Icons.arrow_forward,
+                        isSelected: tool.selectedShape == ShapeType.arrow,
+                        onPressed: () => _selectShape(ShapeType.arrow),
+                        tooltip: 'Ok',
+                      ),
+                      const SizedBox(width: 4),
+                      _buildShapeButton(
+                        icon: Icons.remove,
+                        isSelected: tool.selectedShape == ShapeType.line,
+                        onPressed: () => _selectShape(ShapeType.line),
+                        tooltip: 'Çizgi',
+                      ),
+                    ],
+                  ),
+                ],
+
+                // Colors row
+                const SizedBox(height: 8),
+                Container(
+                  height: 1,
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildColorButton(Colors.red, tool.color == Colors.red),
+                    const SizedBox(width: 4),
+                    _buildColorButton(Colors.blue, tool.color == Colors.blue),
+                    const SizedBox(width: 4),
+                    _buildColorButton(Colors.green, tool.color == Colors.green),
+                    const SizedBox(width: 4),
+                    _buildColorButton(Colors.orange, tool.color == Colors.orange),
+                    const SizedBox(width: 4),
+                    _buildColorButton(Colors.purple, tool.color == Colors.purple),
+                    const SizedBox(width: 4),
+                    _buildColorButton(Colors.black, tool.color == Colors.black),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToolButton({
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onPressed,
+    required String tooltip,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Theme.of(context).colorScheme.primaryContainer
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: isSelected
+                ? Theme.of(context).colorScheme.onPrimaryContainer
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShapeButton({
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onPressed,
+    required String tooltip,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Theme.of(context).colorScheme.secondaryContainer
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            size: 18,
+            color: isSelected
+                ? Theme.of(context).colorScheme.onSecondaryContainer
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColorButton(Color color, bool isSelected) {
+    return InkWell(
+      onTap: () => _selectColor(color),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary
+                : Colors.grey.shade300,
+            width: isSelected ? 3 : 1,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildAnimationCard(BuildContext context) {
     if (widget.crop.userSolution?.drawingDataFile == null) {
       return const SizedBox.shrink();
@@ -713,6 +1073,8 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
             AnimationPlayerWidget(
               animationDataPath: widget.crop.userSolution!.drawingDataFile!,
               baseDirectory: widget.baseDirectory,
+              zipFilePath: widget.zipFilePath,
+              zipBytes: widget.zipBytes,
             ),
           ],
         ),

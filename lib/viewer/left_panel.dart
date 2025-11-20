@@ -31,16 +31,17 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
 
   // Panel state
   Offset _position = const Offset(20, 100);
-  double _panelWidth = 200.0;
-  final double _minWidth = 150.0;
+  double _panelWidth = 300.0;
+  final double _minWidth = 300.0;
   final double _maxWidth = 400.0;
-  double _panelHeight = 600.0;
-  final double _minHeight = 400.0;
-  final double _maxHeight = 900.0;
+  double _panelHeight = 300.0;
+  final double _minHeight = 300.0;
+  double _maxHeight = 500.0;
 
   bool _isDragging = false;
   bool _isResizingRight = false;
   bool _isResizingBottom = false;
+  bool _isResizingTop = false;
   bool _isCollapsed = false;
   bool _isPinned = false;
 
@@ -157,26 +158,26 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
         PageNavigationButtons(controller: widget.controller, isCompact: false),
         const Divider(height: 24),
 
-        // AI Solve Button
-        if (widget.onSolveProblem != null) ...[
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: widget.onSolveProblem,
-              icon: const Icon(Icons.auto_awesome, size: 20),
-              label: const Text('Soru Çöz'),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF4CAF50),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
-          const Divider(height: 24),
-        ],
+        // // AI Solve Button
+        // if (widget.onSolveProblem != null) ...[
+        //   SizedBox(
+        //     width: double.infinity,
+        //     child: FilledButton.icon(
+        //       onPressed: widget.onSolveProblem,
+        //       icon: const Icon(Icons.auto_awesome, size: 20),
+        //       label: const Text('Soru Çöz'),
+        //       style: FilledButton.styleFrom(
+        //         backgroundColor: const Color(0xFF4CAF50),
+        //         foregroundColor: Colors.white,
+        //         padding: const EdgeInsets.symmetric(vertical: 14),
+        //         shape: RoundedRectangleBorder(
+        //           borderRadius: BorderRadius.circular(12),
+        //         ),
+        //       ),
+        //     ),
+        //   ),
+        //   const Divider(height: 24),
+        // ],
 
         // Undo/Redo
         const Text(
@@ -391,6 +392,25 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
       return const SizedBox.shrink();
     }
 
+    // Calculate screen-dependent values (don't use setState in build)
+    final screenHeight = MediaQuery.of(context).size.height;
+    final calculatedMaxHeight = screenHeight / 2;
+
+    // Update max height if needed (only once, not every build)
+    if (_maxHeight != calculatedMaxHeight) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _maxHeight = calculatedMaxHeight;
+            // Clamp current height to new max
+            if (_panelHeight > _maxHeight) {
+              _panelHeight = _maxHeight;
+            }
+          });
+        }
+      });
+    }
+
     return ValueListenableBuilder<ToolState>(
       valueListenable: state.toolNotifier,
       builder: (_, tool, __) {
@@ -497,22 +517,24 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
 
             // Resize handles
             if (!_isCollapsed) ...[
-              // Right resize handle
+              // Right resize handle (Sağa doğru genişletme)
               _buildResizeHandle(
-                left: _position.dx + _panelWidth + 6,
+                left: _position.dx + _panelWidth - 6,
                 top: _position.dy + (_panelHeight / 2) - 35,
                 width: 12,
                 height: 70,
                 isActive: _isResizingRight,
                 isHorizontal: false,
                 scheme: scheme,
+                cursor: SystemMouseCursors.resizeLeftRight,
                 onPanStart: () => setState(() => _isResizingRight = true),
                 onPanUpdate: (delta) {
                   setState(() {
-                    _panelWidth = (_panelWidth + delta.dx).clamp(
+                    final newWidth = (_panelWidth + delta.dx).clamp(
                       _minWidth,
                       _maxWidth,
                     );
+                    _panelWidth = newWidth;
                   });
                 },
                 onPanEnd: () {
@@ -521,27 +543,66 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
                 },
               ),
 
-              // Bottom resize handle
+              // Bottom resize handle (Aşağı doğru uzatma)
               _buildResizeHandle(
                 left: _position.dx + (_panelWidth / 2) - 35,
-                top: _position.dy + _panelHeight + 6,
+                top: _position.dy + _panelHeight - 6,
                 width: 70,
                 height: 12,
                 isActive: _isResizingBottom,
                 isHorizontal: true,
                 scheme: scheme,
+                cursor: SystemMouseCursors.resizeUpDown,
                 onPanStart: () => setState(() => _isResizingBottom = true),
                 onPanUpdate: (delta) {
                   setState(() {
-                    _panelHeight = (_panelHeight + delta.dy).clamp(
+                    final newHeight = (_panelHeight + delta.dy).clamp(
                       _minHeight,
                       _maxHeight,
                     );
+                    _panelHeight = newHeight;
                   });
                 },
                 onPanEnd: () {
                   setState(() => _isResizingBottom = false);
                   _saveSize();
+                },
+              ),
+
+              // Top resize handle (Yukarı doğru uzatma - pozisyon da değişir)
+              _buildResizeHandle(
+                left: _position.dx + (_panelWidth / 2) - 35,
+                top: _position.dy - 6,
+                width: 70,
+                height: 12,
+                isActive: _isResizingTop,
+                isHorizontal: true,
+                scheme: scheme,
+                cursor: SystemMouseCursors.resizeUpDown,
+                onPanStart: () => setState(() => _isResizingTop = true),
+                onPanUpdate: (delta) {
+                  setState(() {
+                    // Yukarı sürüklerken (delta.dy negatif), paneli büyüt
+                    final newHeight = (_panelHeight - delta.dy).clamp(
+                      _minHeight,
+                      _maxHeight,
+                    );
+                    final actualDelta = newHeight - _panelHeight;
+
+                    // Pozisyonu ayarla (yukarı büyürken pozisyon yukarı kaymalı)
+                    final newPosY = (_position.dy - actualDelta).clamp(
+                      0.0,
+                      MediaQuery.of(context).size.height - _minHeight,
+                    );
+
+                    _position = Offset(_position.dx, newPosY);
+                    _panelHeight = newHeight;
+                  });
+                },
+                onPanEnd: () {
+                  setState(() => _isResizingTop = false);
+                  _saveSize();
+                  _savePosition();
                 },
               ),
             ],
@@ -562,31 +623,34 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
     required VoidCallback onPanStart,
     required Function(Offset) onPanUpdate,
     required VoidCallback onPanEnd,
+    MouseCursor? cursor,
   }) {
     return Positioned(
       left: left,
       top: top,
-      child: GestureDetector(
-        onPanStart: (_) => onPanStart(),
-        onPanUpdate: (details) => onPanUpdate(details.delta),
-        onPanEnd: (_) => onPanEnd(),
-        child: Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            color: isActive ? scheme.primary : scheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: scheme.outlineVariant, width: 1.5),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.15),
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Center(
-            child: isHorizontal
+      child: MouseRegion(
+        cursor: cursor ?? (isHorizontal ? SystemMouseCursors.resizeUpDown : SystemMouseCursors.resizeLeftRight),
+        child: GestureDetector(
+          onPanStart: (_) => onPanStart(),
+          onPanUpdate: (details) => onPanUpdate(details.delta),
+          onPanEnd: (_) => onPanEnd(),
+          child: Container(
+            width: width,
+            height: height,
+            decoration: BoxDecoration(
+              color: isActive ? scheme.primary : scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: scheme.outlineVariant, width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Center(
+              child: isHorizontal
                 ? Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: List.generate(
@@ -625,6 +689,7 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
                       ),
                     ),
                   ),
+            ),
           ),
         ),
       ),

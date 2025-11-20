@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -25,12 +26,14 @@ class PdfViewerWithDrawing extends StatefulWidget {
   final PdfController controller;
   final CropData? cropData;
   final String? zipFilePath;
+  final Uint8List? zipBytes; // Web platformu için zip bytes
 
   const PdfViewerWithDrawing({
     super.key,
     required this.controller,
     this.cropData,
     this.zipFilePath,
+    this.zipBytes,
   });
 
   @override
@@ -1129,14 +1132,24 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   }
 
   Future<void> _showCropImage(String imageFileName) async {
-    if (widget.zipFilePath == null) {
-      print('⚠️ Book file path is null!');
+    // Web'de zipBytes, mobil/desktop'ta zipFilePath kullan
+    if (widget.zipFilePath == null && widget.zipBytes == null) {
+      print('⚠️ Book file path and bytes are null!');
       return;
     }
 
     try {
-      final zipBytes = await File(widget.zipFilePath!).readAsBytes();
-      final archive = ZipDecoder().decodeBytes(zipBytes);
+      // Zip bytes'ı al (web'den veya dosyadan)
+      final Uint8List zipBytesData;
+      if (widget.zipBytes != null) {
+        // Web platformu - bytes kullan
+        zipBytesData = widget.zipBytes!;
+      } else {
+        // Mobil/Desktop - dosyadan oku
+        zipBytesData = await File(widget.zipFilePath!).readAsBytes();
+      }
+
+      final archive = ZipDecoder().decodeBytes(zipBytesData);
 
       // Mevcut sayfadaki tüm crop'ları al
       final cropsForPage = widget.cropData!.getCropsForPage(_currentPage);
@@ -1192,6 +1205,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
           pdfController: widget.controller,
           toolNotifier: toolNotifier,
           zipFilePath: widget.zipFilePath,
+          zipBytes: widget.zipBytes,
         ),
       );
 
@@ -1732,6 +1746,7 @@ class _SwipeableImageDialog extends StatefulWidget {
   final PdfController pdfController;
   final ValueNotifier<ToolState> toolNotifier;
   final String? zipFilePath;
+  final Uint8List? zipBytes; // Web platformu için
 
   const _SwipeableImageDialog({
     required this.imageList,
@@ -1741,6 +1756,7 @@ class _SwipeableImageDialog extends StatefulWidget {
     required this.pdfController,
     required this.toolNotifier,
     this.zipFilePath,
+    this.zipBytes,
   });
 
   @override
@@ -1974,6 +1990,73 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
     }
   }
 
+  void _showManualSolutionImage(String drawingFileName) async {
+    final imageBytes = await _loadDrawingImage(drawingFileName);
+
+    if (imageBytes == null || !mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.8,
+            maxHeight: MediaQuery.of(context).size.height * 0.8,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    topRight: Radius.circular(12),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.draw,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Manuel Çözüm Çizimi',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              // Image
+              Flexible(
+                child: InteractiveViewer(
+                  minScale: 0.5,
+                  maxScale: 4.0,
+                  child: Image.memory(
+                    imageBytes,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<Uint8List?> _loadDrawingImage(String drawingPath) async {
     if (widget.zipFilePath == null) return null;
 
@@ -2016,6 +2099,36 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
       print('Error loading/cropping drawing: $e');
     }
     return null;
+  }
+
+  Widget _buildSolutionToggleButton() {
+    return Container(
+      width: 60,
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Center(
+        child: RotatedBox(
+          quarterTurns: 3, // 90 derece saat yönünün tersine
+          child: FilledButton.icon(
+            onPressed: () {
+              setState(() {
+                _isAnswerExpanded = true;
+              });
+            },
+            icon: const Icon(Icons.visibility, size: 18),
+            label: const Text(
+              'Çözümü Göster',
+              style: TextStyle(fontSize: 13),
+            ),
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildAnswerSectionHorizontal() {
@@ -2192,7 +2305,7 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                         style: const TextStyle(fontSize: 13),
                       ),
                     ],
-                    // Show drawing file image if exists
+                    // Show drawing file button if exists
                     if ((crop.userSolution?.drawingFile != null &&
                             crop.userSolution!.drawingFile!.trim().isNotEmpty) ||
                         (crop.solutionMetadata?.drawingFile != null &&
@@ -2200,35 +2313,20 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                                 .trim()
                                 .isNotEmpty)) ...[
                       const SizedBox(height: 12),
-                      FutureBuilder<Uint8List?>(
-                        future: _loadDrawingImage(
+                      OutlinedButton.icon(
+                        onPressed: () => _showManualSolutionImage(
                           crop.userSolution?.drawingFile ??
                               crop.solutionMetadata?.drawingFile ??
                               '',
                         ),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: CircularProgressIndicator(),
-                              ),
-                            );
-                          }
-
-                          if (snapshot.hasError || !snapshot.hasData) {
-                            return const SizedBox.shrink();
-                          }
-
-                          return ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.memory(
-                              snapshot.data!,
-                              fit: BoxFit.contain,
-                            ),
-                          );
-                        },
+                        icon: const Icon(Icons.image, size: 18),
+                        label: const Text('Çizimi Görüntüle'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                        ),
                       ),
                     ],
                   ],
@@ -2365,6 +2463,7 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                         crop: crop,
                         baseDirectory: zipDir,
                         zipFilePath: widget.zipFilePath,
+                        zipBytes: widget.zipBytes,
                       ),
                     );
                   },
@@ -2823,6 +2922,7 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                               crop: crop,
                               baseDirectory: zipDir,
                               zipFilePath: widget.zipFilePath,
+                              zipBytes: widget.zipBytes,
                             ),
                           );
                         },
@@ -3047,11 +3147,14 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                     color: Theme.of(context).colorScheme.outlineVariant,
                   ),
 
-                  // Right Side - Solution Section (Always visible)
-                  Expanded(
-                    flex: 1,
-                    child: _buildAnswerSectionHorizontal(),
-                  ),
+                  // Right Side - Solution Section (Toggle)
+                  if (_isAnswerExpanded)
+                    Expanded(
+                      flex: 1,
+                      child: _buildAnswerSectionHorizontal(),
+                    )
+                  else
+                    _buildSolutionToggleButton(),
                 ],
               ),
             ),

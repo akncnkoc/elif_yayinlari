@@ -23,6 +23,8 @@ class PdfDrawingViewerPage extends StatefulWidget {
   final VoidCallback? onBack;
   final CropData? cropData;
   final String? zipFilePath;
+  final Uint8List? pdfBytes; // Web platformu için PDF bytes
+  final Uint8List? zipBytes; // Web platformu için ZIP bytes
 
   const PdfDrawingViewerPage({
     super.key,
@@ -30,6 +32,8 @@ class PdfDrawingViewerPage extends StatefulWidget {
     this.onBack,
     this.cropData,
     this.zipFilePath,
+    this.pdfBytes,
+    this.zipBytes,
   });
 
   @override
@@ -51,14 +55,35 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
   bool _isToolMenuVisible = false;
   bool _showCalculator = false;
   bool _showScratchpad = false;
+  bool _isPdfLoading = true;
 
   @override
   void initState() {
     super.initState();
+    // Controller'ı hemen initialize et
     _pdfController = PdfController(
-      document: PdfDocument.openFile(widget.pdfPath),
+      document: widget.pdfBytes != null
+        ? PdfDocument.openData(widget.pdfBytes!)
+        : PdfDocument.openFile(widget.pdfPath),
     );
+    _loadPdf();
     _checkServerHealth();
+  }
+
+  Future<void> _loadPdf() async {
+    try {
+      // PDF yüklenene kadar bekle
+      await _pdfController.document;
+
+      if (mounted) {
+        setState(() => _isPdfLoading = false);
+      }
+    } catch (e) {
+      print('❌ Error loading PDF: $e');
+      if (mounted) {
+        setState(() => _isPdfLoading = false);
+      }
+    }
   }
 
   @override
@@ -282,12 +307,93 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
     });
   }
 
+  /// Sayfaya git dialog'unu göster
+  void _showGoToPageDialog() {
+    final pageController = TextEditingController();
+    final totalPages = _pdfController.pagesCount ?? 0;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Sayfaya Git'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Toplam $totalPages sayfa',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: pageController,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Sayfa Numarası',
+                  hintText: '1-$totalPages arası',
+                  border: const OutlineInputBorder(),
+                  prefixIcon: const Icon(Icons.tag),
+                ),
+                onSubmitted: (value) {
+                  _goToPage(pageController.text, totalPages);
+                  Navigator.of(context).pop();
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('İptal'),
+            ),
+            FilledButton(
+              onPressed: () {
+                _goToPage(pageController.text, totalPages);
+                Navigator.of(context).pop();
+              },
+              child: const Text('Git'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Belirtilen sayfaya git
+  void _goToPage(String pageText, int totalPages) {
+    final pageNumber = int.tryParse(pageText);
+
+    if (pageNumber == null) {
+      _showSnackBar('⚠️ Geçerli bir sayı girin!', Colors.orange);
+      return;
+    }
+
+    if (pageNumber < 1 || pageNumber > totalPages) {
+      _showSnackBar(
+        '⚠️ Sayfa numarası 1-$totalPages arasında olmalı!',
+        Colors.orange,
+      );
+      return;
+    }
+
+    _pdfController.jumpToPage(pageNumber);
+    _showSnackBar('📄 Sayfa $pageNumber\'e gidildi', Colors.green);
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = _drawingKey.currentState;
 
     return Scaffold(
-      body: Column(
+      body: Stack(
+        children: [
+          // Ana içerik
+          Column(
         children: [
           // ÜST BAR
           if (state != null)
@@ -306,6 +412,7 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                       timeTracker: state.timeTracker,
                       currentPageTime: pageTime,
                       onBack: widget.onBack,
+                      onGoToPage: _showGoToPageDialog,
                     );
                   },
                 );
@@ -324,6 +431,7 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                     controller: _pdfController,
                     cropData: widget.cropData,
                     zipFilePath: widget.zipFilePath,
+                    zipBytes: widget.zipBytes,
                   ),
                 ),
 
@@ -377,6 +485,87 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                   },
                 );
               },
+            ),
+        ],
+          ),
+
+          // Loading overlay
+          if (_isPdfLoading)
+            Positioned.fill(
+              child: Container(
+                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      // Loading animation
+                      SizedBox(
+                        width: 80,
+                        height: 80,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 6,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 32),
+
+                      // Loading text
+                      Text(
+                        'PDF Yükleniyor...',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.onSurface,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+
+                      Text(
+                        'Lütfen bekleyin',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // Progress indicator dots
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: List.generate(3, (index) {
+                          return TweenAnimationBuilder<double>(
+                            key: ValueKey('$_isPdfLoading-$index'),
+                            tween: Tween(begin: 0.0, end: 1.0),
+                            duration: Duration(milliseconds: 600 + (index * 200)),
+                            curve: Curves.easeInOut,
+                            builder: (context, value, child) {
+                              return Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 4),
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Theme.of(context).colorScheme.primary.withValues(
+                                    alpha: 0.2 + (value * 0.8),
+                                  ),
+                                ),
+                              );
+                            },
+                            onEnd: () {
+                              // Repeat animation
+                              if (mounted && _isPdfLoading) {
+                                setState(() {});
+                              }
+                            },
+                          );
+                        }),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
         ],
       ),

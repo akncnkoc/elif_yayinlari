@@ -9,12 +9,14 @@ class AnimationPlayerWidget extends StatefulWidget {
   final String animationDataPath;
   final String baseDirectory;
   final String? zipFilePath;
+  final Uint8List? zipBytes; // Web platformu için
 
   const AnimationPlayerWidget({
     super.key,
     required this.animationDataPath,
     required this.baseDirectory,
     this.zipFilePath,
+    this.zipBytes,
   });
 
   @override
@@ -25,7 +27,7 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
   AnimationData? _animationData;
   bool _isLoading = true;
   String? _error;
-  int _currentStep = -1; // -1 = boş canvas, 0 = ilk adım
+  int _currentStep = -1;
 
   @override
   void initState() {
@@ -37,24 +39,33 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
     try {
       String jsonString;
 
-      // Try to load from zip archive first
-      if (widget.zipFilePath != null) {
-        print('🎬 Loading animation from ZIP: ${widget.zipFilePath}');
+      // Web'de zipBytes, mobil/desktop'ta zipFilePath kullan
+      if (widget.zipBytes != null || widget.zipFilePath != null) {
+        print('🎬 Loading animation from ZIP');
         print('📄 Animation path in ZIP: ${widget.animationDataPath}');
 
-        final zipFile = File(widget.zipFilePath!);
-        if (!await zipFile.exists()) {
-          setState(() {
-            _error = 'Zip file not found: ${widget.zipFilePath}';
-            _isLoading = false;
-          });
-          return;
+        // Zip bytes'ı al
+        final Uint8List zipBytesData;
+        if (widget.zipBytes != null) {
+          // Web platformu - bytes kullan
+          print('   Using zipBytes (Web platform)');
+          zipBytesData = widget.zipBytes!;
+        } else {
+          // Mobil/Desktop - dosyadan oku
+          print('   Using zipFilePath: ${widget.zipFilePath}');
+          final zipFile = File(widget.zipFilePath!);
+          if (!await zipFile.exists()) {
+            setState(() {
+              _error = 'Zip file not found: ${widget.zipFilePath}';
+              _isLoading = false;
+            });
+            return;
+          }
+          zipBytesData = await zipFile.readAsBytes();
         }
 
-        final zipBytes = await zipFile.readAsBytes();
-        final archive = ZipDecoder().decodeBytes(zipBytes);
+        final archive = ZipDecoder().decodeBytes(zipBytesData);
 
-        // Find the animation data file in the archive
         ArchiveFile? animationFile;
         for (final file in archive) {
           if (file.isFile && file.name == widget.animationDataPath) {
