@@ -1,5 +1,5 @@
-/// Barrel file for all tool panel components
-/// Export all components from this single file for easier imports
+// Barrel file for all tool panel components
+// Export all components from this single file for easier imports
 
 export 'tool_button.dart';
 export 'color_picker_button.dart';

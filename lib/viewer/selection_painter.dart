@@ -11,7 +11,7 @@ class SelectionPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     // Tüm ekranı yarı saydam siyah ile karart
     final darkPaint = Paint()
-      ..color = Colors.black.withOpacity(0.6)
+      ..color = Colors.black.withValues(alpha: 0.6)
       ..style = PaintingStyle.fill;
 
     // Seçili alan dışındaki her yeri karart
@@ -32,7 +32,7 @@ class SelectionPainter extends CustomPainter {
 
     // İç border (beyaz ince çizgi - daha belirgin olması için)
     final innerBorderPaint = Paint()
-      ..color = Colors.white.withOpacity(0.5)
+      ..color = Colors.white.withValues(alpha: 0.5)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 

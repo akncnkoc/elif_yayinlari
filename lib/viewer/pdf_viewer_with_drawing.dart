@@ -7,6 +7,7 @@ import 'package:pdfx/pdfx.dart';
 import 'package:vector_math/vector_math_64.dart' show Vector3;
 import 'package:archive/archive.dart';
 import 'package:image/image.dart' as img;
+import 'package:provider/provider.dart';
 import 'stroke.dart';
 import 'drawing_painter.dart';
 import 'tool_state.dart';
@@ -14,9 +15,10 @@ import 'drawing_history.dart';
 import 'page_time_tracker.dart';
 import 'magnifier_overlay.dart';
 import 'magnified_content_overlay.dart';
+import 'drawing_provider.dart';
 import '../models/crop_data.dart';
 import 'widgets/solution_detail_dialog.dart';
-import 'dart:math' show cos, sin;
+import 'dart:math' as math;
 
 // Import new components and utilities
 import '../core/constants/app_constants.dart';
@@ -121,6 +123,11 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   // RepaintBoundary key for capturing content
   final GlobalKey _repaintBoundaryKey = GlobalKey();
 
+  // DrawingProvider listener
+  DrawingProvider? _drawingProvider;
+  double _lastProviderZoom = 1.0;
+  double _lastProviderRotation = 0.0;
+
   @override
   void initState() {
     super.initState();
@@ -132,6 +139,37 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     _timeTracker.startTimer();
 
     _saveToHistory();
+
+    // Listen to DrawingProvider changes after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _drawingProvider = context.read<DrawingProvider>();
+        _drawingProvider!.addListener(_onDrawingProviderChanged);
+      }
+    });
+  }
+
+  void _onDrawingProviderChanged() {
+    if (_drawingProvider == null) return;
+
+    // Handle zoom changes
+    final newZoom = _drawingProvider!.zoomLevel;
+    if ((newZoom - _lastProviderZoom).abs() > 0.01) {
+      _lastProviderZoom = newZoom;
+      setState(() {
+        transformationController.value = Matrix4.identity()
+          ..scaleByVector3(Vector3(newZoom, newZoom, 1.0));
+      });
+    }
+
+    // Handle rotation changes
+    final newRotation = _drawingProvider!.rotationAngle;
+    if ((newRotation - _lastProviderRotation).abs() > 0.01) {
+      _lastProviderRotation = newRotation;
+      setState(() {
+        _rotationAngle = newRotation;
+      });
+    }
   }
 
   void _onPageChanged() {
@@ -165,6 +203,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     _canUndoNotifier.dispose();
     _canRedoNotifier.dispose();
     _timeTracker.dispose();
+    _drawingProvider?.removeListener(_onDrawingProviderChanged);
     _currentPageTimeNotifier.dispose();
     super.dispose();
   }
@@ -468,6 +507,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       _shapeStartPoint = transformedPosition;
 
       final tool = toolNotifier.value;
+      print('🔶 Şekil çiziliyor - seçili şekil: ${tool.selectedShape}');
       StrokeType strokeType;
 
       switch (tool.selectedShape) {
@@ -482,6 +522,24 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
           break;
         case ShapeType.arrow:
           strokeType = StrokeType.arrow;
+          break;
+        case ShapeType.triangle:
+          strokeType = StrokeType.triangle;
+          break;
+        case ShapeType.star:
+          strokeType = StrokeType.star;
+          break;
+        case ShapeType.pentagon:
+          strokeType = StrokeType.pentagon;
+          break;
+        case ShapeType.hexagon:
+          strokeType = StrokeType.hexagon;
+          break;
+        case ShapeType.ellipse:
+          strokeType = StrokeType.ellipse;
+          break;
+        case ShapeType.doubleArrow:
+          strokeType = StrokeType.doubleArrow;
           break;
       }
 
@@ -524,6 +582,13 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       "🔍 Current scale: ${transformationController.value.getMaxScaleOnAxis()}",
     );
 
+    // İlk çizimse boş durumu kaydet
+    if (!_history.canUndo(_currentPage) && !_history.canRedo(_currentPage)) {
+      print('🔵 İlk çizim - boş durum kaydediliyor (Sayfa: $_currentPage)');
+      _saveToHistory();
+      print('🔵 Boş durum kaydedildi - canUndo: ${_canUndoNotifier.value}');
+    }
+
     setState(() {
       _isDrawing = true;
 
@@ -536,7 +601,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
           erase: true,
         );
         _activeStroke!.points.add(transformedPosition);
-        _eraseAt(transformedPosition, tool.width);
+        _eraseAt(transformedPosition, tool.width * 15); // Daha büyük silgi alanı
         print("🧹 Eraser stroke started");
         return;
       }
@@ -565,7 +630,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
 
     if (tool.eraser) {
       _activeStroke?.points.add(transformedPosition);
-      _eraseAt(transformedPosition, tool.width);
+      _eraseAt(transformedPosition, tool.width * 15); // Daha büyük silgi alanı
       _repaintNotifier.value++;
     } else {
       // Add all points during active drawing for real-time smoothness
@@ -600,7 +665,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
           final point = shapePoints[i];
           final distance = (point - position).distance;
 
-          if (distance >= eraserRadius * 1.2) {
+          if (distance >= eraserRadius * 0.8) { // Daha kolay silme
             remainingPoints.add(point);
           } else {
             if (remainingPoints.isNotEmpty) {
@@ -635,7 +700,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
         final point = stroke.points[i];
         final distance = (point - position).distance;
 
-        if (distance >= eraserRadius * 1.2) {
+        if (distance >= eraserRadius * 0.8) { // Daha kolay silme
           remainingPoints.add(point);
         } else {
           if (remainingPoints.isNotEmpty) {
@@ -676,6 +741,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     switch (stroke.type) {
       case StrokeType.line:
       case StrokeType.arrow:
+      case StrokeType.doubleArrow:
         final steps = ((p2 - p1).distance / 2).ceil();
         for (int i = 0; i <= steps; i++) {
           final t = i / steps;
@@ -709,18 +775,106 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
         final steps = (radius * 2).ceil();
 
         for (int i = 0; i < steps; i++) {
-          final angle = (i / steps) * 2 * 3.14159;
+          final angle = (i / steps) * 2 * math.pi;
           expandedPoints.add(
             Offset(
-              center.dx + radius * cos(angle),
-              center.dy + radius * sin(angle),
+              center.dx + radius * math.cos(angle),
+              center.dy + radius * math.sin(angle),
             ),
           );
         }
         break;
 
+      case StrokeType.ellipse:
+        final rect = Rect.fromPoints(p1, p2);
+        final center = rect.center;
+        final radiusX = rect.width / 2;
+        final radiusY = rect.height / 2;
+        final steps = ((radiusX + radiusY) * 2).ceil();
+
+        for (int i = 0; i < steps; i++) {
+          final angle = (i / steps) * 2 * math.pi;
+          expandedPoints.add(
+            Offset(
+              center.dx + radiusX * math.cos(angle),
+              center.dy + radiusY * math.sin(angle),
+            ),
+          );
+        }
+        break;
+
+      case StrokeType.triangle:
+        final start = p1;
+        final end = p2;
+        final top = Offset((start.dx + end.dx) / 2, start.dy);
+        final bottomRight = Offset(end.dx, end.dy);
+        final bottomLeft = Offset(start.dx, end.dy);
+
+        expandedPoints.addAll(_interpolateLine(top, bottomRight));
+        expandedPoints.addAll(_interpolateLine(bottomRight, bottomLeft));
+        expandedPoints.addAll(_interpolateLine(bottomLeft, top));
+        break;
+
+      case StrokeType.star:
+        final center = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+        final radius = (p2 - p1).distance / 2;
+        const points = 5;
+        const innerRadiusRatio = 0.4;
+
+        for (int i = 0; i < points * 2; i++) {
+          final angle = (i * math.pi / points) - math.pi / 2;
+          final r = (i.isEven ? radius : radius * innerRadiusRatio);
+          final current = Offset(
+            center.dx + r * math.cos(angle),
+            center.dy + r * math.sin(angle),
+          );
+
+          final nextAngle = ((i + 1) * math.pi / points) - math.pi / 2;
+          final nextR = ((i + 1).isEven ? radius : radius * innerRadiusRatio);
+          final next = Offset(
+            center.dx + nextR * math.cos(nextAngle),
+            center.dy + nextR * math.sin(nextAngle),
+          );
+
+          expandedPoints.addAll(_interpolateLine(current, next));
+        }
+        break;
+
+      case StrokeType.pentagon:
+        expandedPoints.addAll(_expandPolygon(p1, p2, 5));
+        break;
+
+      case StrokeType.hexagon:
+        expandedPoints.addAll(_expandPolygon(p1, p2, 6));
+        break;
+
       default:
         expandedPoints.addAll(stroke.points);
+    }
+
+    return expandedPoints;
+  }
+
+  List<Offset> _expandPolygon(Offset p1, Offset p2, int sides) {
+    final center = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+    final radius = (p2 - p1).distance / 2;
+    final List<Offset> expandedPoints = [];
+
+    for (int i = 0; i < sides; i++) {
+      final angle = (i * 2 * math.pi / sides) - math.pi / 2;
+      final nextAngle = ((i + 1) * 2 * math.pi / sides) - math.pi / 2;
+
+      final current = Offset(
+        center.dx + radius * math.cos(angle),
+        center.dy + radius * math.sin(angle),
+      );
+
+      final next = Offset(
+        center.dx + radius * math.cos(nextAngle),
+        center.dy + radius * math.sin(nextAngle),
+      );
+
+      expandedPoints.addAll(_interpolateLine(current, next));
     }
 
     return expandedPoints;
@@ -1001,7 +1155,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     final tool = toolNotifier.value;
     if (!tool.magnifier) return;
 
-    final position = event.localPosition;
+    final position = _transformPoint(event.localPosition);
     final handle = _magnifierState.getHandleAtPosition(position);
 
     if (handle != null) {
@@ -1033,7 +1187,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     final tool = toolNotifier.value;
     if (!tool.magnifier) return;
 
-    final position = event.localPosition;
+    final position = _transformPoint(event.localPosition);
 
     if (_magnifierState.isSelecting) {
       // Update selection area
@@ -1194,7 +1348,6 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
 
       if (!mounted) return;
 
-      // ÇİZİMLE DESTEKLİ DİYALOG
       showDialog(
         context: context,
         builder: (context) => _SwipeableImageDialog(
@@ -1669,9 +1822,16 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                               magnifierRect == Rect.zero) {
                             return Container(color: Colors.transparent);
                           }
+
+                          // Transform content-space rect to screen-space for display
+                          final screenSpaceRect = custom_matrix.MatrixUtils.transformRect(
+                            transformationController.value,
+                            magnifierRect,
+                          );
+
                           return CustomPaint(
                             painter: MagnifierPainter(
-                              selectedArea: magnifierRect,
+                              selectedArea: screenSpaceRect,
                               magnification: 2.0,
                             ),
                             size: Size.infinite,
@@ -1693,16 +1853,31 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       children: [
         RepaintBoundary(key: _repaintBoundaryKey, child: mainContent),
         if (_showMagnifiedView && _magnifiedRect != null)
-          MagnifiedContentOverlay(
-            selectedArea: _magnifiedRect!,
-            contentKey: _repaintBoundaryKey,
-            magnification: 2.0,
-            onClose: () {
-              setState(() {
-                _showMagnifiedView = false;
-                _magnifiedRect = null;
-                _magnifierState = MagnifierState();
-              });
+          Builder(
+            builder: (context) {
+              // Transform content-space rect to screen-space rect
+              final screenSpaceRect = custom_matrix.MatrixUtils.transformRect(
+                transformationController.value,
+                _magnifiedRect!,
+              );
+
+              print('🔍 Magnifier transformation:');
+              print('   Content-space rect: $_magnifiedRect');
+              print('   Screen-space rect: $screenSpaceRect');
+              print('   Transform matrix scale: ${transformationController.value.getMaxScaleOnAxis()}');
+
+              return MagnifiedContentOverlay(
+                selectedArea: screenSpaceRect,
+                contentKey: _repaintBoundaryKey,
+                magnification: 2.0,
+                onClose: () {
+                  setState(() {
+                    _showMagnifiedView = false;
+                    _magnifiedRect = null;
+                    _magnifierState = MagnifierState();
+                  });
+                },
+              );
             },
           ),
       ],
@@ -1764,7 +1939,6 @@ class _SwipeableImageDialog extends StatefulWidget {
 }
 
 class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
-  late PageController _pageController;
   late int _currentIndex;
   late List<CropItem> _sortedCrops; // Question number'a göre sıralanmış
 
@@ -1773,13 +1947,13 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
   Stroke? _activeStroke;
   final ValueNotifier<int> _repaintNotifier = ValueNotifier<int>(0);
   final TransformationController _ivController = TransformationController();
-  final double _minZoom = AppConstants.minZoom;
-  final double _maxZoom = AppConstants.maxZoom;
 
   // Palm rejection for dialog
   bool _dialogStylusActive = false;
   DateTime? _dialogLastStylusTime;
-  static const Duration _dialogPalmRejectionWindow = Duration(milliseconds: 500);
+  static const Duration _dialogPalmRejectionWindow = Duration(
+    milliseconds: 500,
+  );
 
   // Answer section expansion state
   bool _isAnswerExpanded = false;
@@ -1803,13 +1977,10 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
       (crop) => crop.imageFile == initialImageFile,
     );
     if (_currentIndex == -1) _currentIndex = 0;
-
-    _pageController = PageController(initialPage: _currentIndex);
   }
 
   @override
   void dispose() {
-    _pageController.dispose();
     _repaintNotifier.dispose();
     _ivController.dispose();
     super.dispose();
@@ -1901,7 +2072,6 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
     _strokes.removeWhere((s) => !s.erase);
     _strokes.addAll(newStrokes);
   }
-
 
   // New pointer handlers for better stylus support in dialog
   void _onPointerDown(PointerDownEvent event) {
@@ -2044,10 +2214,7 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                 child: InteractiveViewer(
                   minScale: 0.5,
                   maxScale: 4.0,
-                  child: Image.memory(
-                    imageBytes,
-                    fit: BoxFit.contain,
-                  ),
+                  child: Image.memory(imageBytes, fit: BoxFit.contain),
                 ),
               ),
             ],
@@ -2101,30 +2268,27 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
     return null;
   }
 
-  Widget _buildSolutionToggleButton() {
+  Widget _buildSolutionToggleButton({bool rotate = false}) {
     return Container(
-      width: 60,
+      width: !rotate ? 200 : 60,
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Center(
-        child: RotatedBox(
-          quarterTurns: 3, // 90 derece saat yönünün tersine
-          child: FilledButton.icon(
-            onPressed: () {
-              setState(() {
-                _isAnswerExpanded = true;
-              });
-            },
-            icon: const Icon(Icons.visibility, size: 18),
-            label: const Text(
-              'Çözümü Göster',
-              style: TextStyle(fontSize: 13),
-            ),
-            style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
-            ),
+      child: RotatedBox(
+        quarterTurns: !rotate ? 0 : 3,
+        child: FilledButton.icon(
+          onPressed: () {
+            setState(() {
+              _isAnswerExpanded = !_isAnswerExpanded;
+            });
+          },
+          icon: rotate
+              ? const Icon(Icons.visibility, size: 18)
+              : const Icon(Icons.visibility_off, size: 18),
+          label: Text(
+            rotate ? 'Çözümü Göster' : 'Çözümü Gizle',
+            style: TextStyle(fontSize: 13),
+          ),
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           ),
         ),
       ),
@@ -2148,19 +2312,19 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
             crop.solutionMetadata!.drawingFile!.trim().isNotEmpty) ||
         (crop.userSolution?.drawingFile != null &&
             crop.userSolution!.drawingFile!.trim().isNotEmpty);
+    final hasSolutionImages =
+        (crop.solutionMetadata?.solutionImages != null &&
+            crop.solutionMetadata!.solutionImages.isNotEmpty);
     final hasAiSolution =
         crop.solutionMetadata?.aiSolution != null ||
         crop.userSolution?.aiSolution != null;
 
     final hasSolution =
-        hasAnswerChoice || hasExplanation || hasDrawing || hasAiSolution;
+        hasAnswerChoice || hasExplanation || hasDrawing || hasSolutionImages || hasAiSolution;
 
     if (!hasSolution) {
       return const Center(
-        child: Text(
-          'Çözüm bulunamadı',
-          style: TextStyle(color: Colors.grey),
-        ),
+        child: Text('Çözüm bulunamadı', style: TextStyle(color: Colors.grey)),
       );
     }
 
@@ -2171,7 +2335,7 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
+            _buildSolutionToggleButton(rotate: false),
             Row(
               children: [
                 Icon(
@@ -2225,37 +2389,6 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
               const SizedBox(height: 16),
             ],
 
-            // Solution type badge
-            if (crop.solutionMetadata?.solutionType != null) ...[
-              Wrap(
-                spacing: 8,
-                children: [
-                  Chip(
-                    label: Text(
-                      _getSolutionTypeText(
-                        crop.solutionMetadata!.solutionType!,
-                      ),
-                    ),
-                    avatar: Icon(
-                      _getSolutionTypeIcon(
-                        crop.solutionMetadata!.solutionType!,
-                      ),
-                      size: 16,
-                    ),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  ...crop.solutionMetadata!.solvedBy.map(
-                    (method) => Chip(
-                      label: Text(_getMethodText(method)),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // Manual explanation or drawing
             if ((crop.userSolution?.explanation != null &&
                     crop.userSolution!.explanation!.trim().isNotEmpty) ||
                 (crop.solutionMetadata?.explanation != null &&
@@ -2292,7 +2425,9 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                     ),
                     // Show explanation if exists
                     if ((crop.userSolution?.explanation != null &&
-                            crop.userSolution!.explanation!.trim().isNotEmpty) ||
+                            crop.userSolution!.explanation!
+                                .trim()
+                                .isNotEmpty) ||
                         (crop.solutionMetadata?.explanation != null &&
                             crop.solutionMetadata!.explanation!
                                 .trim()
@@ -2307,7 +2442,9 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                     ],
                     // Show drawing file button if exists
                     if ((crop.userSolution?.drawingFile != null &&
-                            crop.userSolution!.drawingFile!.trim().isNotEmpty) ||
+                            crop.userSolution!.drawingFile!
+                                .trim()
+                                .isNotEmpty) ||
                         (crop.solutionMetadata?.drawingFile != null &&
                             crop.solutionMetadata!.drawingFile!
                                 .trim()
@@ -2448,7 +2585,9 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
 
             // Detailed Solution Button
             if (crop.userSolution?.hasAnimationData == true ||
-                crop.userSolution?.drawingDataFile != null) ...[
+                crop.userSolution?.drawingDataFile != null ||
+                (crop.solutionMetadata?.solutionImages != null &&
+                    crop.solutionMetadata!.solutionImages.isNotEmpty)) ...[
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
@@ -2467,8 +2606,19 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                       ),
                     );
                   },
-                  icon: const Icon(Icons.play_circle_outline, size: 18),
-                  label: const Text('Animasyonlu Çözümü İzle'),
+                  icon: Icon(
+                    (crop.userSolution?.hasAnimationData == true ||
+                            crop.userSolution?.drawingDataFile != null)
+                        ? Icons.play_circle_outline
+                        : Icons.photo_library,
+                    size: 18,
+                  ),
+                  label: Text(
+                    (crop.userSolution?.hasAnimationData == true ||
+                            crop.userSolution?.drawingDataFile != null)
+                        ? 'Animasyonlu Çözümü İzle'
+                        : 'Çözüm Resimlerini Göster',
+                  ),
                   style: FilledButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.tertiary,
                     foregroundColor: Theme.of(context).colorScheme.onTertiary,
@@ -2503,12 +2653,15 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
             crop.solutionMetadata!.drawingFile!.trim().isNotEmpty) ||
         (crop.userSolution?.drawingFile != null &&
             crop.userSolution!.drawingFile!.trim().isNotEmpty);
+    final hasSolutionImages =
+        (crop.solutionMetadata?.solutionImages != null &&
+            crop.solutionMetadata!.solutionImages.isNotEmpty);
     final hasAiSolution =
         crop.solutionMetadata?.aiSolution != null ||
         crop.userSolution?.aiSolution != null;
 
     final hasSolution =
-        hasAnswerChoice || hasExplanation || hasDrawing || hasAiSolution;
+        hasAnswerChoice || hasExplanation || hasDrawing || hasSolutionImages || hasAiSolution;
 
     if (!hasSolution) {
       return const SizedBox.shrink();
@@ -2906,7 +3059,9 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
 
                   // Detailed Solution Button
                   if (crop.userSolution?.hasAnimationData == true ||
-                      crop.userSolution?.drawingDataFile != null) ...[
+                      crop.userSolution?.drawingDataFile != null ||
+                      (crop.solutionMetadata?.solutionImages != null &&
+                          crop.solutionMetadata!.solutionImages.isNotEmpty)) ...[
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
@@ -2926,11 +3081,26 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                             ),
                           );
                         },
-                        icon: const Icon(Icons.play_circle_outline, size: 20),
-                        label: const Text('Animasyonlu Çözümü İzle'),
+                        icon: Icon(
+                          (crop.userSolution?.hasAnimationData == true ||
+                                  crop.userSolution?.drawingDataFile != null)
+                              ? Icons.play_circle_outline
+                              : Icons.photo_library,
+                          size: 20,
+                        ),
+                        label: Text(
+                          (crop.userSolution?.hasAnimationData == true ||
+                                  crop.userSolution?.drawingDataFile != null)
+                              ? 'Animasyonlu Çözümü İzle'
+                              : 'Çözüm Resimlerini Göster',
+                        ),
                         style: FilledButton.styleFrom(
-                          backgroundColor: Theme.of(context).colorScheme.tertiary,
-                          foregroundColor: Theme.of(context).colorScheme.onTertiary,
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.tertiary,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.onTertiary,
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -3072,74 +3242,80 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Left Side - Image Gallery
                   Expanded(
                     flex: 2,
-                    child: PageView.builder(
-                      controller: _pageController,
-                      physics: const PageScrollPhysics(),
-                      onPageChanged: (index) {
-                        setState(() {
-                          _currentIndex = index;
-                        });
-                      },
-                      itemCount: _sortedCrops.length,
-                      itemBuilder: (context, index) {
-                        // Sıralanmış crop listesinden resmi al
-                        final crop = _sortedCrops[index];
-                        final imageEntry = widget.imageList.firstWhere(
-                          (entry) => entry.key == crop.imageFile,
-                        );
-
-                        final strokes = _strokesPerIndex[index] ??= [];
-
-                        return Stack(
-                          children: [
-                            InteractiveViewer(
-                              transformationController: _ivController,
-                              minScale: _minZoom,
-                              maxScale: _maxZoom,
-                              panEnabled: true,
-                              scaleEnabled: true,
-                              child: Stack(
-                                children: [
-                                  Positioned.fill(
-                                    child: Image.memory(
-                                      imageEntry.value,
-                                      fit: BoxFit.contain,
-                                    ),
-                                  ),
-                                  Positioned.fill(
-                                    child: ValueListenableBuilder<int>(
-                                      valueListenable: _repaintNotifier,
-                                      builder: (_, __, ___) {
-                                        return CustomPaint(
-                                          painter: DrawingPainter(strokes: strokes),
-                                          size: Size.infinite,
-                                          child: Container(),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ],
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            child: Center(
+                              key: ValueKey(_currentIndex),
+                              child: Image.memory(
+                                widget.imageList
+                                    .firstWhere(
+                                      (entry) =>
+                                          entry.key ==
+                                          _sortedCrops[_currentIndex].imageFile,
+                                    )
+                                    .value,
+                                fit: BoxFit.contain,
                               ),
                             ),
-                            // Listener OUTSIDE InteractiveViewer for stylus support
-                            Positioned.fill(
-                              child: Listener(
-                                onPointerDown: _onPointerDown,
-                                onPointerMove: _onPointerMove,
-                                onPointerUp: _onPointerUp,
-                                onPointerCancel: _onPointerCancel,
-                                behavior: HitTestBehavior.translucent,
+                          ),
+                        ),
+                        if (_sortedCrops.length > 1)
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.surface,
+                              borderRadius: const BorderRadius.only(
+                                bottomLeft: Radius.circular(12),
+                                bottomRight: Radius.circular(12),
                               ),
                             ),
-                          ],
-                        );
-                      },
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.arrow_back_ios),
+                                  onPressed: _currentIndex > 0
+                                      ? () {
+                                          setState(() {
+                                            _currentIndex--;
+                                          });
+                                        }
+                                      : null,
+                                ),
+                                const SizedBox(width: 24),
+                                Text(
+                                  'Soru numarasına göre sıralı',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurface
+                                        .withValues(alpha: 0.6),
+                                  ),
+                                ),
+                                const SizedBox(width: 24),
+                                IconButton(
+                                  icon: const Icon(Icons.arrow_forward_ios),
+                                  onPressed:
+                                      _currentIndex < _sortedCrops.length - 1
+                                      ? () {
+                                          setState(() {
+                                            _currentIndex++;
+                                          });
+                                        }
+                                      : null,
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-
                   // Divider
                   VerticalDivider(
                     width: 1,
@@ -3151,63 +3327,20 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                   if (_isAnswerExpanded)
                     Expanded(
                       flex: 1,
-                      child: _buildAnswerSectionHorizontal(),
+                      child: Column(
+                        children: [_buildAnswerSectionHorizontal()],
+                      ),
                     )
                   else
-                    _buildSolutionToggleButton(),
+                    Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Center(
+                        child: _buildSolutionToggleButton(rotate: true),
+                      ),
+                    ),
                 ],
               ),
             ),
-            // Alt navigasyon butonları (question number sırasına göre)
-            if (_sortedCrops.length > 1)
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(12),
-                    bottomRight: Radius.circular(12),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.arrow_back_ios),
-                      onPressed: _currentIndex > 0
-                          ? () {
-                              _pageController.previousPage(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeInOut,
-                              );
-                            }
-                          : null,
-                    ),
-                    const SizedBox(width: 24),
-                    Text(
-                      'Soru numarasına göre sıralı',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withValues(alpha: 0.6),
-                      ),
-                    ),
-                    const SizedBox(width: 24),
-                    IconButton(
-                      icon: const Icon(Icons.arrow_forward_ios),
-                      onPressed: _currentIndex < _sortedCrops.length - 1
-                          ? () {
-                              _pageController.nextPage(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeInOut,
-                              );
-                            }
-                          : null,
-                    ),
-                  ],
-                ),
-              ),
           ],
         ),
       ),

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:pdfx/pdfx.dart';
 import '../../../../../models/crop_data.dart';
 
-/// Swipeable image gallery dialog for viewing question images
 class ImageGalleryDialog extends StatefulWidget {
   final List<MapEntry<String, Uint8List>> imageList;
   final int initialIndex;
@@ -76,11 +75,14 @@ class _ImageGalleryDialogState extends State<ImageGalleryDialog> {
 
             // Image Gallery
             Expanded(
-              child: _buildImageGallery(),
+              child: Column(
+                children: [
+                  _buildImageGallery(),
+                  if (_sortedCrops.length > 1) _buildNavigationFooter(scheme),
+                ],
+              ),
             ),
-
             // Navigation Footer
-            if (_sortedCrops.length > 1) _buildNavigationFooter(scheme),
           ],
         ),
       ),
@@ -89,7 +91,7 @@ class _ImageGalleryDialogState extends State<ImageGalleryDialog> {
 
   Widget _buildHeader(ColorScheme scheme) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: scheme.primaryContainer,
         borderRadius: const BorderRadius.only(
@@ -142,6 +144,7 @@ class _ImageGalleryDialogState extends State<ImageGalleryDialog> {
 
   Widget _buildImageGallery() {
     return PageView.builder(
+      physics: const NeverScrollableScrollPhysics(),
       controller: _pageController,
       onPageChanged: (index) {
         setState(() {
@@ -159,10 +162,7 @@ class _ImageGalleryDialogState extends State<ImageGalleryDialog> {
           minScale: 0.5,
           maxScale: 4.0,
           child: Center(
-            child: Image.memory(
-              imageEntry.value,
-              fit: BoxFit.contain,
-            ),
+            child: Image.memory(imageEntry.value, fit: BoxFit.contain),
           ),
         );
       },

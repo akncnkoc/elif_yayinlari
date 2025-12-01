@@ -9,8 +9,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:archive/archive.dart';
 import 'package:path_provider/path_provider.dart';
 import './dropbox/dropbox_service.dart';
-import './dropbox/dropbox_oauth.dart';
-import './dropbox/dropbox_auth_page.dart';
 import './dropbox/models.dart';
 import './models/crop_data.dart';
 import 'login_page.dart';
@@ -54,38 +52,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
       useDropbox = false;
       // Local files will be picked by user on-demand
     });
-  }
-
-  Future<void> _selectDropboxStorage() async {
-    final oauth = DropboxOAuth();
-    await oauth.initialize();
-
-    if (!oauth.isAuthenticated()) {
-      // Navigate to Dropbox auth page
-      if (!mounted) return;
-      final result = await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => DropboxAuthPage(
-            onAuthSuccess: () {
-              Navigator.pop(context, true);
-            },
-          ),
-        ),
-      );
-
-      if (result != true) {
-        // User cancelled authentication
-        return;
-      }
-    }
-
-    setState(() {
-      showStorageSelection = false;
-      useDropbox = true;
-      dropboxService = DropboxService();
-    });
-    _loadFolder('');
   }
 
   Future<void> _makeFullscreen() async {

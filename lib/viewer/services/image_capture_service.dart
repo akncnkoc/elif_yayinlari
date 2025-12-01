@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 class ImageCaptureService {
-  /// Seçili alanı transform'a göre düzelt ve crop et
   static Future<Uint8List?> captureSelectedArea({
     required GlobalKey canvasKey,
     required Rect selectedRect,

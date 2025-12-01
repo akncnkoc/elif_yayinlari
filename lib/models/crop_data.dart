@@ -178,6 +178,7 @@ class SolutionMetadata {
   final String? answerChoice;
   final String? explanation;
   final String? drawingFile;
+  final List<String> solutionImages;
   final AiSolution? aiSolution;
   final List<String> solvedBy;
 
@@ -187,9 +188,10 @@ class SolutionMetadata {
     this.answerChoice,
     this.explanation,
     this.drawingFile,
+    List<String>? solutionImages,
     this.aiSolution,
     required this.solvedBy,
-  });
+  }) : solutionImages = solutionImages ?? [];
 
   factory SolutionMetadata.fromJson(Map<String, dynamic> json) {
     return SolutionMetadata(
@@ -198,6 +200,10 @@ class SolutionMetadata {
       answerChoice: json['answer_choice']?.toString(),
       explanation: json['explanation']?.toString(),
       drawingFile: json['drawing_file']?.toString(),
+      solutionImages: (json['solution_images'] as List?)
+              ?.map((item) => item.toString())
+              .toList() ??
+          [],
       aiSolution: json['ai_solution'] != null
           ? AiSolution.fromJson(json['ai_solution'] as Map<String, dynamic>)
           : null,

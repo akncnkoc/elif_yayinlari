@@ -1,6 +1,18 @@
 import 'package:flutter/material.dart';
 
-enum StrokeType { freehand, rectangle, circle, arrow, line }
+enum StrokeType {
+  freehand,
+  rectangle,
+  circle,
+  arrow,
+  line,
+  triangle,
+  star,
+  pentagon,
+  hexagon,
+  ellipse,
+  doubleArrow,
+}
 
 class Stroke {
   final List<Offset> points;

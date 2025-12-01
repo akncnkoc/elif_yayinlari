@@ -8,6 +8,7 @@ dependencies:
   flutter:
     sdk: "flutter"
   cupertino_icons: "^1.0.8"
+  provider: ^6.1.5+1
   pdfx: "^2.9.2"
   http: "^1.2.2"
   vector_math: "^2.1.4"
@@ -18,8 +19,6 @@ dependencies:
   package_info_plus: ^9.0.0
   flutter_colorpicker: ^1.1.0
   screen_retriever: ^0.2.0
-  syncfusion_flutter_pdfviewer: ^31.1.23
-  syncfusion_flutter_pdf: any
   flutter_resizable_container: ^4.2.0
   flutter_box_transform: ^0.4.7
   icons_flutter: ^0.0.5

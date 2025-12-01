@@ -55,6 +55,7 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
           print('   Using zipFilePath: ${widget.zipFilePath}');
           final zipFile = File(widget.zipFilePath!);
           if (!await zipFile.exists()) {
+            if (!mounted) return;
             setState(() {
               _error = 'Zip file not found: ${widget.zipFilePath}';
               _isLoading = false;
@@ -82,6 +83,7 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
               print('   - ${file.name}');
             }
           }
+          if (!mounted) return;
           setState(() {
             _error = 'Animation data file not found in archive: ${widget.animationDataPath}';
             _isLoading = false;
@@ -99,6 +101,7 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
 
         final file = File(filePath);
         if (!await file.exists()) {
+          if (!mounted) return;
           setState(() {
             _error = 'Animation data file not found: $filePath';
             _isLoading = false;
@@ -111,6 +114,7 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
 
       final animationData = AnimationData.fromJsonString(jsonString);
 
+      if (!mounted) return;
       setState(() {
         _animationData = animationData;
         _isLoading = false;
@@ -118,6 +122,7 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
 
       // Otomatik oynatma kapalı - kullanıcı butonlarla kontrol edecek
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = 'Error loading animation: $e';
         _isLoading = false;

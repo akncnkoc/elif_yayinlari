@@ -2,7 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:pdfx/pdfx.dart';
 import 'pdf_viewer_with_drawing.dart';
-import 'left_panel.dart';
+import 'tool_panel.dart';
 import '../soru_cozucu_service.dart';
 import 'calculator_widget.dart';
 import 'scratchpad_widget.dart';
@@ -17,6 +17,9 @@ import 'components/bottom_drag_handle.dart';
 
 // Services
 import 'services/image_capture_service.dart';
+
+import 'package:akilli_tahta_proje_demo/viewer/drawing_provider.dart';
+import 'package:provider/provider.dart';
 
 class PdfDrawingViewerPage extends StatefulWidget {
   final String pdfPath;
@@ -48,8 +51,10 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
   // Soru Çözücü Service
   final SoruCozucuService _service = SoruCozucuService();
 
+  // DrawingProvider - initState'te oluşturulacak
+  late DrawingProvider _drawingProvider;
+
   bool _isAnalyzing = false;
-  AnalysisResult? _lastResult;
   bool _serverHealthy = false;
   bool _showThumbnails = false;
   bool _isToolMenuVisible = false;
@@ -60,11 +65,15 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
   @override
   void initState() {
     super.initState();
+
+    // DrawingProvider'ı oluştur
+    _drawingProvider = DrawingProvider();
+
     // Controller'ı hemen initialize et
     _pdfController = PdfController(
       document: widget.pdfBytes != null
-        ? PdfDocument.openData(widget.pdfBytes!)
-        : PdfDocument.openFile(widget.pdfPath),
+          ? PdfDocument.openData(widget.pdfBytes!)
+          : PdfDocument.openFile(widget.pdfPath),
     );
     _loadPdf();
     _checkServerHealth();
@@ -89,6 +98,7 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
   @override
   void dispose() {
     _pdfController.dispose();
+    _drawingProvider.dispose();
     super.dispose();
   }
 
@@ -105,33 +115,6 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
     // if (!isHealthy) {
     //   _showServerHealthWarning();
     // }
-  }
-
-  void _showServerHealthWarning() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: const [
-            Icon(Icons.warning_amber_rounded, color: Colors.white),
-            SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                'Python sunucusu çalışmıyor! Soru çözme özelliği kullanılamaz.',
-                style: TextStyle(fontSize: 13),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.orange.shade700,
-        duration: const Duration(seconds: 4),
-        behavior: SnackBarBehavior.floating,
-        action: SnackBarAction(
-          label: 'Tekrar Dene',
-          textColor: Colors.white,
-          onPressed: _checkServerHealth,
-        ),
-      ),
-    );
   }
 
   /// Seçili alanı capture et
@@ -174,7 +157,6 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
 
     setState(() {
       _isAnalyzing = true;
-      _lastResult = null;
     });
 
     _showAnalyzingDialog();
@@ -202,10 +184,6 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
       }
 
       print('✅ Analiz tamamlandı: ${result.soruSayisi} soru bulundu');
-
-      setState(() {
-        _lastResult = result;
-      });
 
       // 3. Seçimi temizle
       state.clearSelection();
@@ -253,14 +231,26 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
   }
 
   void _showResultDialog(AnalysisResult result) {
-    showDialog(
-      context: context,
-      builder: (context) => AnalysisResultDialog(result: result),
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        barrierColor: Colors.transparent,
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return AnalysisResultDialog(result: result);
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+      ),
     );
   }
 
-  void _showSnackBar(String message, Color backgroundColor,
-      {SnackBarAction? action}) {
+  void _showSnackBar(
+    String message,
+    Color backgroundColor, {
+    SnackBarAction? action,
+  }) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -387,194 +377,216 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
 
   @override
   Widget build(BuildContext context) {
-    final state = _drawingKey.currentState;
-
-    return Scaffold(
-      body: Stack(
-        children: [
-          // Ana içerik
-          Column(
-        children: [
-          // ÜST BAR
-          if (state != null)
-            ValueListenableBuilder<String>(
-              valueListenable: state.currentPageTimeNotifier,
-              builder: (context, pageTime, _) {
-                return AnimatedBuilder(
-                  animation: state.transformationController,
-                  builder: (context, _) {
-                    return PdfViewerTopBar(
-                      pdfPath: widget.pdfPath,
-                      pdfController: _pdfController,
-                      showThumbnails: _showThumbnails,
-                      onToggleThumbnails: _toggleThumbnails,
-                      zoomLevel: state.zoomLevel,
-                      timeTracker: state.timeTracker,
-                      currentPageTime: pageTime,
-                      onBack: widget.onBack,
-                      onGoToPage: _showGoToPageDialog,
+    return ChangeNotifierProvider.value(
+      value: _drawingProvider,
+      child: Scaffold(
+        body: Stack(
+          children: [
+            // Ana içerik
+            Column(
+              children: [
+                // ÜST BAR
+                Consumer<DrawingProvider>(
+                  builder: (context, drawingProvider, child) {
+                    final state = _drawingKey.currentState;
+                    if (state == null) {
+                      // Handle null state case if necessary
+                      return const SizedBox.shrink(); // or a placeholder
+                    }
+                    return ValueListenableBuilder<String>(
+                      valueListenable: state.currentPageTimeNotifier,
+                      builder: (context, pageTime, _) {
+                        return AnimatedBuilder(
+                          animation: state.transformationController,
+                          builder: (context, _) {
+                            return PdfViewerTopBar(
+                              pdfPath: widget.pdfPath,
+                              pdfController: _pdfController,
+                              showThumbnails: _showThumbnails,
+                              onToggleThumbnails: _toggleThumbnails,
+                              zoomLevel: drawingProvider.zoomLevel,
+                              timeTracker: state.timeTracker,
+                              currentPageTime: pageTime,
+                              onBack: widget.onBack,
+                              onGoToPage: _showGoToPageDialog,
+                            );
+                          },
+                        );
+                      },
                     );
                   },
-                );
-              },
-            ),
-
-          // PDF Viewer + Floating Panel
-          Expanded(
-            child: Stack(
-              children: [
-                // PDF Viewer (Full screen)
-                RepaintBoundary(
-                  key: _canvasKey,
-                  child: PdfViewerWithDrawing(
-                    key: _drawingKey,
-                    controller: _pdfController,
-                    cropData: widget.cropData,
-                    zipFilePath: widget.zipFilePath,
-                    zipBytes: widget.zipBytes,
-                  ),
                 ),
 
-                // Floating Panel (Overlay)
-                FloatingLeftPanel(
-                  controller: _pdfController,
-                  drawingKey: _drawingKey,
-                  onSolveProblem: _serverHealthy ? _solveProblem : null,
-                ),
-
-                // Drag Handle - Alt kısımda thumbnail açmak için
-                if (!_showThumbnails)
-                  BottomDragHandle(
-                    onSwipeUp: () {
-                      setState(() {
-                        _showThumbnails = true;
-                      });
-                    },
-                  ),
-
-                // Floating Tool Menu (Sağ alt köşe)
-                if (_isToolMenuVisible)
-                  FloatingToolMenu(
-                    onOpenCalculator: _openCalculator,
-                    onOpenScratchpad: _openScratchpad,
-                  ),
-
-                // Calculator Widget (Overlay)
-                if (_showCalculator)
-                  CalculatorWidget(onClose: _closeCalculator),
-
-                // Scratchpad Widget (Overlay)
-                if (_showScratchpad)
-                  ScratchpadWidget(onClose: _closeScratchpad),
-              ],
-            ),
-          ),
-
-          // ALT KISIM - PDF Thumbnail List
-          if (_showThumbnails)
-            ValueListenableBuilder<int>(
-              valueListenable: _pdfController.pageListenable,
-              builder: (context, currentPage, child) {
-                return ThumbnailPanel(
-                  pdfController: _pdfController,
-                  currentPage: currentPage,
-                  onClose: () {
-                    setState(() {
-                      _showThumbnails = false;
-                    });
-                  },
-                );
-              },
-            ),
-        ],
-          ),
-
-          // Loading overlay
-          if (_isPdfLoading)
-            Positioned.fill(
-              child: Container(
-                color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                // PDF Viewer + Floating Panel
+                Expanded(
+                  child: Stack(
                     children: [
-                      // Loading animation
-                      SizedBox(
-                        width: 80,
-                        height: 80,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 6,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-
-                      // Loading text
-                      Text(
-                        'PDF Yükleniyor...',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                          color: Theme.of(context).colorScheme.onSurface,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      Text(
-                        'Lütfen bekleyin',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      // PDF Viewer (Full screen)
+                      RepaintBoundary(
+                        key: _canvasKey,
+                        child: PdfViewerWithDrawing(
+                          key: _drawingKey,
+                          controller: _pdfController,
+                          cropData: widget.cropData,
+                          zipFilePath: widget.zipFilePath,
+                          zipBytes: widget.zipBytes,
                         ),
                       ),
 
-                      const SizedBox(height: 24),
-
-                      // Progress indicator dots
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: List.generate(3, (index) {
-                          return TweenAnimationBuilder<double>(
-                            key: ValueKey('$_isPdfLoading-$index'),
-                            tween: Tween(begin: 0.0, end: 1.0),
-                            duration: Duration(milliseconds: 600 + (index * 200)),
-                            curve: Curves.easeInOut,
-                            builder: (context, value, child) {
-                              return Container(
-                                margin: const EdgeInsets.symmetric(horizontal: 4),
-                                width: 8,
-                                height: 8,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: Theme.of(context).colorScheme.primary.withValues(
-                                    alpha: 0.2 + (value * 0.8),
-                                  ),
-                                ),
-                              );
-                            },
-                            onEnd: () {
-                              // Repeat animation
-                              if (mounted && _isPdfLoading) {
-                                setState(() {});
-                              }
-                            },
-                          );
-                        }),
+                      // Floating Panel (Overlay)
+                      ToolPanel(
+                        controller: _pdfController,
+                        onSolveProblem: _serverHealthy ? _solveProblem : null,
+                        toolNotifier: _drawingKey.currentState?.toolNotifier,
+                        canUndoNotifier: _drawingKey.currentState?.canUndoNotifier,
+                        canRedoNotifier: _drawingKey.currentState?.canRedoNotifier,
+                        onUndo: () => _drawingKey.currentState?.undo(),
+                        onRedo: () => _drawingKey.currentState?.redo(),
+                        onClear: () =>
+                            _drawingKey.currentState?.clearCurrentPage(),
                       ),
+
+                      // Drag Handle - Alt kısımda thumbnail açmak için
+                      if (!_showThumbnails)
+                        BottomDragHandle(
+                          onSwipeUp: () {
+                            setState(() {
+                              _showThumbnails = true;
+                            });
+                          },
+                        ),
+
+                      // Floating Tool Menu (Sağ alt köşe)
+                      if (_isToolMenuVisible)
+                        FloatingToolMenu(
+                          onOpenCalculator: _openCalculator,
+                          onOpenScratchpad: _openScratchpad,
+                        ),
+
+                      // Calculator Widget (Overlay)
+                      if (_showCalculator)
+                        CalculatorWidget(onClose: _closeCalculator),
+
+                      // Scratchpad Widget (Overlay)
+                      if (_showScratchpad)
+                        ScratchpadWidget(onClose: _closeScratchpad),
                     ],
                   ),
                 ),
-              ),
+
+                // ALT KISIM - PDF Thumbnail List
+                if (_showThumbnails)
+                  ValueListenableBuilder<int>(
+                    valueListenable: _pdfController.pageListenable,
+                    builder: (context, currentPage, child) {
+                      return ThumbnailPanel(
+                        pdfController: _pdfController,
+                        currentPage: currentPage,
+                        onClose: () {
+                          setState(() {
+                            _showThumbnails = false;
+                          });
+                        },
+                      );
+                    },
+                  ),
+              ],
             ),
-        ],
+
+            // Loading overlay
+            if (_isPdfLoading)
+              Positioned.fill(
+                child: Container(
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.surface.withValues(alpha: 0.95),
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        // Loading animation
+                        SizedBox(
+                          width: 80,
+                          height: 80,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 6,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 32),
+
+                        // Loading text
+                        Text(
+                          'PDF Yükleniyor...',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurface,
+                            letterSpacing: -0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+
+                        Text(
+                          'Lütfen bekleyin',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        // Progress indicator dots
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: List.generate(3, (index) {
+                            return TweenAnimationBuilder<double>(
+                              key: ValueKey('$_isPdfLoading-$index'),
+                              tween: Tween(begin: 0.0, end: 1.0),
+                              duration: Duration(
+                                milliseconds: 600 + (index * 200),
+                              ),
+                              curve: Curves.easeInOut,
+                              builder: (context, value, child) {
+                                return Container(
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Theme.of(context).colorScheme.primary
+                                        .withValues(alpha: 0.2 + (value * 0.8)),
+                                  ),
+                                );
+                              },
+                              onEnd: () {
+                                // Repeat animation
+                                if (mounted && _isPdfLoading) {
+                                  setState(() {});
+                                }
+                              },
+                            );
+                          }),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _toggleToolMenu,
+          tooltip: 'Araçlar',
+          child: Icon(_isToolMenuVisible ? Icons.close : Icons.widgets),
+        ),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _toggleToolMenu,
-        tooltip: 'Araçlar',
-        child: Icon(_isToolMenuVisible ? Icons.close : Icons.widgets),
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 }

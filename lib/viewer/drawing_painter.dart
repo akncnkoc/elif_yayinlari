@@ -56,6 +56,24 @@ class DrawingPainter extends CustomPainter {
         case StrokeType.arrow:
           _drawArrow(canvas, stroke, paint);
           break;
+        case StrokeType.triangle:
+          _drawTriangle(canvas, stroke, paint);
+          break;
+        case StrokeType.star:
+          _drawStar(canvas, stroke, paint);
+          break;
+        case StrokeType.pentagon:
+          _drawPentagon(canvas, stroke, paint);
+          break;
+        case StrokeType.hexagon:
+          _drawHexagon(canvas, stroke, paint);
+          break;
+        case StrokeType.ellipse:
+          _drawEllipse(canvas, stroke, paint);
+          break;
+        case StrokeType.doubleArrow:
+          _drawDoubleArrow(canvas, stroke, paint);
+          break;
       }
     }
   }
@@ -143,6 +161,138 @@ class DrawingPainter extends CustomPainter {
       // Draw arrow head
       canvas.drawLine(end, arrowPoint1, paint);
       canvas.drawLine(end, arrowPoint2, paint);
+    }
+  }
+
+  void _drawTriangle(Canvas canvas, Stroke stroke, Paint paint) {
+    if (stroke.points.length >= 2) {
+      final start = stroke.points.first;
+      final end = stroke.points.last;
+
+      final path = Path();
+      // Top point
+      path.moveTo((start.dx + end.dx) / 2, start.dy);
+      // Bottom right
+      path.lineTo(end.dx, end.dy);
+      // Bottom left
+      path.lineTo(start.dx, end.dy);
+      // Close path
+      path.close();
+
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  void _drawStar(Canvas canvas, Stroke stroke, Paint paint) {
+    if (stroke.points.length >= 2) {
+      final center = Offset(
+        (stroke.points.first.dx + stroke.points.last.dx) / 2,
+        (stroke.points.first.dy + stroke.points.last.dy) / 2,
+      );
+      final radius = (stroke.points.first - stroke.points.last).distance / 2;
+
+      final path = Path();
+      const points = 5;
+      const innerRadiusRatio = 0.4;
+
+      for (int i = 0; i < points * 2; i++) {
+        final angle = (i * math.pi / points) - math.pi / 2;
+        final r = (i.isEven ? radius : radius * innerRadiusRatio);
+        final x = center.dx + r * math.cos(angle);
+        final y = center.dy + r * math.sin(angle);
+
+        if (i == 0) {
+          path.moveTo(x, y);
+        } else {
+          path.lineTo(x, y);
+        }
+      }
+      path.close();
+
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  void _drawPentagon(Canvas canvas, Stroke stroke, Paint paint) {
+    if (stroke.points.length >= 2) {
+      _drawPolygon(canvas, stroke, paint, 5);
+    }
+  }
+
+  void _drawHexagon(Canvas canvas, Stroke stroke, Paint paint) {
+    if (stroke.points.length >= 2) {
+      _drawPolygon(canvas, stroke, paint, 6);
+    }
+  }
+
+  void _drawPolygon(Canvas canvas, Stroke stroke, Paint paint, int sides) {
+    final center = Offset(
+      (stroke.points.first.dx + stroke.points.last.dx) / 2,
+      (stroke.points.first.dy + stroke.points.last.dy) / 2,
+    );
+    final radius = (stroke.points.first - stroke.points.last).distance / 2;
+
+    final path = Path();
+    for (int i = 0; i < sides; i++) {
+      final angle = (i * 2 * math.pi / sides) - math.pi / 2;
+      final x = center.dx + radius * math.cos(angle);
+      final y = center.dy + radius * math.sin(angle);
+
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    path.close();
+
+    canvas.drawPath(path, paint);
+  }
+
+  void _drawEllipse(Canvas canvas, Stroke stroke, Paint paint) {
+    if (stroke.points.length >= 2) {
+      final rect = Rect.fromPoints(stroke.points.first, stroke.points.last);
+      canvas.drawOval(rect, paint);
+    }
+  }
+
+  void _drawDoubleArrow(Canvas canvas, Stroke stroke, Paint paint) {
+    if (stroke.points.length >= 2) {
+      final start = stroke.points.first;
+      final end = stroke.points.last;
+
+      // Draw main line
+      canvas.drawLine(start, end, paint);
+
+      // Calculate arrow heads
+      const arrowLength = 20.0;
+      const arrowAngle = 25.0 * math.pi / 180;
+
+      final angle = math.atan2(end.dy - start.dy, end.dx - start.dx);
+
+      // Arrow head at end
+      final arrowPoint1 = Offset(
+        end.dx - arrowLength * math.cos(angle - arrowAngle),
+        end.dy - arrowLength * math.sin(angle - arrowAngle),
+      );
+      final arrowPoint2 = Offset(
+        end.dx - arrowLength * math.cos(angle + arrowAngle),
+        end.dy - arrowLength * math.sin(angle + arrowAngle),
+      );
+      canvas.drawLine(end, arrowPoint1, paint);
+      canvas.drawLine(end, arrowPoint2, paint);
+
+      // Arrow head at start (pointing opposite direction)
+      final arrowPoint3 = Offset(
+        start.dx + arrowLength * math.cos(angle - arrowAngle),
+        start.dy + arrowLength * math.sin(angle - arrowAngle),
+      );
+      final arrowPoint4 = Offset(
+        start.dx + arrowLength * math.cos(angle + arrowAngle),
+        start.dy + arrowLength * math.sin(angle + arrowAngle),
+      );
+      canvas.drawLine(start, arrowPoint3, paint);
+      canvas.drawLine(start, arrowPoint4, paint);
     }
   }
 

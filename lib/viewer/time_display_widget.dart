@@ -19,7 +19,7 @@ class TimeDisplayWidget extends StatelessWidget {
           elevation: 4,
           borderRadius: BorderRadius.circular(12),
           color: scheme.surface,
-          shadowColor: Colors.black.withOpacity(0.2),
+          shadowColor: Colors.black.withValues(alpha: 0.2),
           child: InkWell(
             onTap: onTap,
             borderRadius: BorderRadius.circular(12),
@@ -105,10 +105,10 @@ class TimeStatisticsDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: scheme.primaryContainer.withOpacity(0.3),
+                color: scheme.primaryContainer.withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: scheme.primary.withOpacity(0.3),
+                  color: scheme.primary.withValues(alpha: 0.3),
                   width: 1.5,
                 ),
               ),
@@ -123,7 +123,7 @@ class TimeStatisticsDialog extends StatelessWidget {
                         'Toplam Süre',
                         style: TextStyle(
                           fontSize: 14,
-                          color: scheme.onSurface.withOpacity(0.7),
+                          color: scheme.onSurface.withValues(alpha: 0.7),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -167,7 +167,7 @@ class TimeStatisticsDialog extends StatelessWidget {
                         child: Text(
                           'Henüz veri yok',
                           style: TextStyle(
-                            color: scheme.onSurface.withOpacity(0.5),
+                            color: scheme.onSurface.withValues(alpha: 0.5),
                           ),
                         ),
                       )
@@ -176,7 +176,7 @@ class TimeStatisticsDialog extends StatelessWidget {
                         itemCount: sortedPages.length,
                         separatorBuilder: (context, index) => Divider(
                           height: 1,
-                          color: scheme.outlineVariant.withOpacity(0.5),
+                          color: scheme.outlineVariant.withValues(alpha: 0.5),
                         ),
                         itemBuilder: (context, index) {
                           final pageNum = sortedPages[index];
@@ -190,7 +190,7 @@ class TimeStatisticsDialog extends StatelessWidget {
 
                           return Container(
                             color: isCurrentPage
-                                ? scheme.primaryContainer.withOpacity(0.2)
+                                ? scheme.primaryContainer.withValues(alpha: 0.2)
                                 : Colors.transparent,
                             padding: const EdgeInsets.symmetric(
                               horizontal: 12,
@@ -285,8 +285,8 @@ class TimeStatisticsDialog extends StatelessWidget {
                                         '${percentage.toStringAsFixed(1)}%',
                                         style: TextStyle(
                                           fontSize: 11,
-                                          color: scheme.onSurface.withOpacity(
-                                            0.6,
+                                          color: scheme.onSurface.withValues(
+                                            alpha: 0.6,
                                           ),
                                         ),
                                       ),

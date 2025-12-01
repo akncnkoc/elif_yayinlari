@@ -1,6 +1,17 @@
 import 'package:flutter/material.dart';
 
-enum ShapeType { rectangle, circle, arrow, line }
+enum ShapeType {
+  rectangle,
+  circle,
+  arrow,
+  line,
+  triangle,
+  star,
+  pentagon,
+  hexagon,
+  ellipse,
+  doubleArrow,
+}
 
 class ToolState {
   final bool eraser;

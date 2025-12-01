@@ -1,18 +1,18 @@
 import 'stroke.dart';
 
 /// Çizim geçmişini yöneten sınıf - Undo/Redo için kullanılır
-class DrawingHistory {
-  // Her sayfa için ayrı geçmiş tutar
-  final Map<int, List<List<Stroke>>> _history = {};
-  final Map<int, int> _currentIndex = {};
+class DrawingHistory<T> {
+  // Her anahtar için ayrı geçmiş tutar (örneğin, sayfa numarası veya resim adı)
+  final Map<T, List<List<Stroke>>> _history = {};
+  final Map<T, int> _currentIndex = {};
 
   static const int maxHistorySize = 50; // Maksimum 50 adım geriye gidebilir
 
   /// Mevcut durumu kaydet
-  void saveState(int pageNumber, List<Stroke> strokes) {
+  void saveState(T key, List<Stroke> strokes) {
     // Geçmiş listesini al veya oluştur
-    final history = _history[pageNumber] ?? [];
-    final currentIndex = _currentIndex[pageNumber] ?? -1;
+    final history = _history[key] ?? [];
+    final currentIndex = _currentIndex[key] ?? -1;
 
     // Eğer ortadaysak (undo yapılmışsa), ileriyi sil
     if (currentIndex < history.length - 1) {
@@ -48,33 +48,33 @@ class DrawingHistory {
     }
 
     // İndeksi güncelle
-    _history[pageNumber] = history;
-    _currentIndex[pageNumber] = history.length - 1;
+    _history[key] = history;
+    _currentIndex[key] = history.length - 1;
   }
 
   /// Undo yapılabilir mi?
-  bool canUndo(int pageNumber) {
-    final currentIndex = _currentIndex[pageNumber] ?? -1;
+  bool canUndo(T key) {
+    final currentIndex = _currentIndex[key] ?? -1;
     return currentIndex > 0;
   }
 
   /// Redo yapılabilir mi?
-  bool canRedo(int pageNumber) {
-    final history = _history[pageNumber];
+  bool canRedo(T key) {
+    final history = _history[key];
     if (history == null) return false;
 
-    final currentIndex = _currentIndex[pageNumber] ?? -1;
+    final currentIndex = _currentIndex[key] ?? -1;
     return currentIndex < history.length - 1;
   }
 
   /// Undo işlemi - bir önceki duruma dön
-  List<Stroke>? undo(int pageNumber) {
-    if (!canUndo(pageNumber)) return null;
+  List<Stroke>? undo(T key) {
+    if (!canUndo(key)) return null;
 
-    final currentIndex = _currentIndex[pageNumber]!;
-    _currentIndex[pageNumber] = currentIndex - 1;
+    final currentIndex = _currentIndex[key]!;
+    _currentIndex[key] = currentIndex - 1;
 
-    final history = _history[pageNumber]!;
+    final history = _history[key]!;
     final previousState = history[currentIndex - 1];
 
     // Deep copy döndür
@@ -100,13 +100,13 @@ class DrawingHistory {
   }
 
   /// Redo işlemi - bir sonraki duruma git
-  List<Stroke>? redo(int pageNumber) {
-    if (!canRedo(pageNumber)) return null;
+  List<Stroke>? redo(T key) {
+    if (!canRedo(key)) return null;
 
-    final currentIndex = _currentIndex[pageNumber]!;
-    _currentIndex[pageNumber] = currentIndex + 1;
+    final currentIndex = _currentIndex[key]!;
+    _currentIndex[key] = currentIndex + 1;
 
-    final history = _history[pageNumber]!;
+    final history = _history[key]!;
     final nextState = history[currentIndex + 1];
 
     // Deep copy döndür
@@ -131,10 +131,10 @@ class DrawingHistory {
     }).toList();
   }
 
-  /// Belirli bir sayfanın geçmişini temizle
-  void clearPage(int pageNumber) {
-    _history.remove(pageNumber);
-    _currentIndex.remove(pageNumber);
+  /// Belirli bir anahtarın geçmişini temizle
+  void clear(T key) {
+    _history.remove(key);
+    _currentIndex.remove(key);
   }
 
   /// Tüm geçmişi temizle
@@ -144,14 +144,14 @@ class DrawingHistory {
   }
 
   /// Debug için - mevcut durumu göster
-  String getDebugInfo(int pageNumber) {
-    final history = _history[pageNumber];
-    final currentIndex = _currentIndex[pageNumber];
+  String getDebugInfo(T key) {
+    final history = _history[key];
+    final currentIndex = _currentIndex[key];
 
     if (history == null) {
-      return 'Sayfa $pageNumber: Geçmiş yok';
+      return 'Key $key: Geçmiş yok';
     }
 
-    return 'Sayfa $pageNumber: ${currentIndex! + 1}/${history.length} adım';
+    return 'Key $key: ${currentIndex! + 1}/${history.length} adım';
   }
 }

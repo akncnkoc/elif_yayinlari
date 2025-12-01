@@ -96,4 +96,36 @@ class MatrixUtils {
       ..translateByVector3(Vector3(translation.dx, translation.dy, 0))
       ..scaleByDouble(scale, scale, 1, 1);
   }
+
+  /// Transforms a Rect from content space to screen space
+  /// This is used when we have content-space coordinates (inside InteractiveViewer)
+  /// and need to map them to screen-space coordinates (outside InteractiveViewer)
+  static Rect transformRect(Matrix4 transform, Rect rect) {
+    try {
+      // Transform all four corners of the rect
+      final topLeft = transformRectPoint(transform, rect.topLeft);
+      final topRight = transformRectPoint(transform, rect.topRight);
+      final bottomLeft = transformRectPoint(transform, rect.bottomLeft);
+      final bottomRight = transformRectPoint(transform, rect.bottomRight);
+
+      // Find the bounding box of the transformed corners
+      final left = [topLeft.dx, topRight.dx, bottomLeft.dx, bottomRight.dx].reduce((a, b) => a < b ? a : b);
+      final top = [topLeft.dy, topRight.dy, bottomLeft.dy, bottomRight.dy].reduce((a, b) => a < b ? a : b);
+      final right = [topLeft.dx, topRight.dx, bottomLeft.dx, bottomRight.dx].reduce((a, b) => a > b ? a : b);
+      final bottom = [topLeft.dy, topRight.dy, bottomLeft.dy, bottomRight.dy].reduce((a, b) => a > b ? a : b);
+
+      return Rect.fromLTRB(left, top, right, bottom);
+    } catch (e) {
+      return rect;
+    }
+  }
+
+  /// Helper to transform a point from content space to screen space
+  /// This applies the FORWARD transform (not inverse)
+  static Offset transformRectPoint(Matrix4 transform, Offset point) {
+    final Vector3 transformed = transform.transform3(
+      Vector3(point.dx, point.dy, 0),
+    );
+    return Offset(transformed.x, transformed.y);
+  }
 }

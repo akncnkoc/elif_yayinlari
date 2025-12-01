@@ -1,7 +1,8 @@
+import 'package:akilli_tahta_proje_demo/viewer/drawing_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:icons_flutter/icons_flutter.dart';
 import 'package:pdfx/pdfx.dart';
-import 'pdf_viewer_with_drawing.dart';
+import 'package:provider/provider.dart';
 import 'tool_state.dart';
 import '../services/user_preferences_service.dart';
 
@@ -9,25 +10,49 @@ import '../services/user_preferences_service.dart';
 import '../features/drawing/presentation/widgets/tool_panel/tool_panel_components.dart';
 import '../features/pdf_viewer/presentation/widgets/page_navigation_buttons.dart';
 
-class FloatingLeftPanel extends StatefulWidget {
+class ToolPanel extends StatefulWidget {
   final PdfController controller;
-  final GlobalKey<PdfViewerWithDrawingState> drawingKey;
   final VoidCallback? onSolveProblem;
+  final ValueNotifier<ToolState>? toolNotifier;
+  final VoidCallback? onUndo;
+  final VoidCallback? onRedo;
+  final VoidCallback? onClear;
+  final ValueNotifier<bool>? canUndoNotifier;
+  final ValueNotifier<bool>? canRedoNotifier;
 
-  const FloatingLeftPanel({
+  const ToolPanel({
     super.key,
     required this.controller,
-    required this.drawingKey,
     this.onSolveProblem,
+    this.toolNotifier,
+    this.onUndo,
+    this.onRedo,
+    this.onClear,
+    this.canUndoNotifier,
+    this.canRedoNotifier,
   });
 
   @override
-  State<FloatingLeftPanel> createState() => _FloatingLeftPanelState();
+  State<ToolPanel> createState() => _ToolPanelState();
 }
 
-class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
+class _ToolPanelState extends State<ToolPanel> {
   UserPreferencesService? _prefs;
   bool _isInitialized = false;
+
+  // Helper method to update both DrawingProvider and toolNotifier
+  void _updateTool(
+    DrawingProvider provider,
+    ToolState Function(ToolState) updater,
+  ) {
+    // Update DrawingProvider
+    provider.setTool(updater);
+
+    // Also update toolNotifier if provided
+    if (widget.toolNotifier != null) {
+      widget.toolNotifier!.value = updater(widget.toolNotifier!.value);
+    }
+  }
 
   // Panel state
   Offset _position = const Offset(20, 100);
@@ -83,7 +108,7 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
   Widget _buildCollapsedContent(
     ToolState tool,
     ColorScheme scheme,
-    PdfViewerWithDrawingState state,
+    DrawingProvider provider,
   ) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(8),
@@ -113,33 +138,93 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
             icon: Icons.pan_tool,
             tooltip: 'Kaydır',
             isSelected: tool.mouse || tool.grab,
-            onPressed: () => state.setMouse(true),
+            onPressed: () => _updateTool(
+              provider,
+              (t) => t.copyWith(
+                mouse: true,
+                grab: false,
+                pencil: false,
+                highlighter: false,
+                eraser: false,
+                shape: false,
+                selection: false,
+                magnifier: false,
+              ),
+            ),
           ),
           ToolButtonCompact(
             icon: Icons.brush,
             tooltip: 'Kalem',
             isSelected: tool.pencil,
-            onPressed: () => state.setPencil(true),
+            onPressed: () => _updateTool(
+              provider,
+              (t) => t.copyWith(
+                pencil: true,
+                mouse: false,
+                grab: false,
+                highlighter: false,
+                eraser: false,
+                shape: false,
+                selection: false,
+                magnifier: false,
+              ),
+            ),
           ),
           ToolButtonCompact(
             icon: Icons.highlight,
             tooltip: 'Highlighter',
             isSelected: tool.highlighter,
             selectedColor: Colors.yellow.shade600,
-            onPressed: () => state.setHighlighter(true),
+            onPressed: () => _updateTool(
+              provider,
+              (t) => t.copyWith(
+                highlighter: true,
+                pencil: false,
+                mouse: false,
+                grab: false,
+                eraser: false,
+                shape: false,
+                selection: false,
+                magnifier: false,
+              ),
+            ),
           ),
           ToolButtonCompact(
             icon: Icons.search,
             tooltip: 'Büyüteç',
             isSelected: tool.magnifier,
             selectedColor: const Color(0xFF9C27B0),
-            onPressed: () => state.setMagnifier(!tool.magnifier),
+            onPressed: () => _updateTool(
+              provider,
+              (t) => t.copyWith(
+                magnifier: !t.magnifier,
+                pencil: false,
+                mouse: false,
+                grab: false,
+                highlighter: false,
+                eraser: false,
+                shape: false,
+                selection: false,
+              ),
+            ),
           ),
           ToolButtonCompact(
             icon: Icons.cleaning_services,
             tooltip: 'Silgi',
             isSelected: tool.eraser,
-            onPressed: () => state.setEraser(true),
+            onPressed: () => _updateTool(
+              provider,
+              (t) => t.copyWith(
+                eraser: true,
+                pencil: false,
+                mouse: false,
+                grab: false,
+                highlighter: false,
+                shape: false,
+                selection: false,
+                magnifier: false,
+              ),
+            ),
           ),
         ],
       ),
@@ -149,7 +234,7 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
   Widget _buildExpandedContent(
     ToolState tool,
     ColorScheme scheme,
-    PdfViewerWithDrawingState state,
+    DrawingProvider provider,
   ) {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -158,27 +243,6 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
         PageNavigationButtons(controller: widget.controller, isCompact: false),
         const Divider(height: 24),
 
-        // // AI Solve Button
-        // if (widget.onSolveProblem != null) ...[
-        //   SizedBox(
-        //     width: double.infinity,
-        //     child: FilledButton.icon(
-        //       onPressed: widget.onSolveProblem,
-        //       icon: const Icon(Icons.auto_awesome, size: 20),
-        //       label: const Text('Soru Çöz'),
-        //       style: FilledButton.styleFrom(
-        //         backgroundColor: const Color(0xFF4CAF50),
-        //         foregroundColor: Colors.white,
-        //         padding: const EdgeInsets.symmetric(vertical: 14),
-        //         shape: RoundedRectangleBorder(
-        //           borderRadius: BorderRadius.circular(12),
-        //         ),
-        //       ),
-        //     ),
-        //   ),
-        //   const Divider(height: 24),
-        // ],
-
         // Undo/Redo
         const Text(
           'Geri Al / İleri Al',
@@ -186,26 +250,40 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 8),
-        ValueListenableBuilder<bool>(
-          valueListenable: state.canUndoNotifier,
-          builder: (context, canUndo, _) {
-            return ValueListenableBuilder<bool>(
-              valueListenable: state.canRedoNotifier,
-              builder: (context, canRedo, _) {
-                return UndoRedoButtons(
-                  canUndo: canUndo,
-                  canRedo: canRedo,
-                  onUndo: () => state.undo(),
-                  onRedo: () => state.redo(),
-                  isCompact: false,
-                );
-              },
-            );
-          },
-        ),
+        // Use ValueListenableBuilder to listen to canUndo/canRedo changes
+        widget.canUndoNotifier != null && widget.canRedoNotifier != null
+            ? ValueListenableBuilder<bool>(
+                valueListenable: widget.canUndoNotifier!,
+                builder: (context, canUndo, child) {
+                  return ValueListenableBuilder<bool>(
+                    valueListenable: widget.canRedoNotifier!,
+                    builder: (context, canRedo, child) {
+                      return UndoRedoButtons(
+                        canUndo: canUndo,
+                        canRedo: canRedo,
+                        onUndo: widget.onUndo ?? () {},
+                        onRedo: widget.onRedo ?? () {},
+                        isCompact: false,
+                      );
+                    },
+                  );
+                },
+              )
+            : UndoRedoButtons(
+                canUndo: provider.canUndo,
+                canRedo: provider.canRedo,
+                onUndo: () {
+                  provider.undo();
+                  widget.onUndo?.call();
+                },
+                onRedo: () {
+                  provider.redo();
+                  widget.onRedo?.call();
+                },
+                isCompact: false,
+              ),
         const Divider(height: 24),
 
-        // Zoom controls
         const Text(
           'Zoom',
           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
@@ -221,21 +299,21 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
               icon: Icons.zoom_in,
               tooltip: 'Yakınlaştır',
               isSelected: false,
-              onPressed: () => state.zoomIn(),
+              onPressed: () => provider.zoomIn(),
               size: 42,
             ),
             ToolButton(
               icon: Icons.zoom_out,
               tooltip: 'Uzaklaştır',
               isSelected: false,
-              onPressed: () => state.zoomOut(),
+              onPressed: () => provider.zoomOut(),
               size: 42,
             ),
             ToolButton(
               icon: Icons.fit_screen,
               tooltip: 'Zoom Sıfırla',
               isSelected: false,
-              onPressed: () => state.resetZoom(),
+              onPressed: () => provider.resetZoom(),
               size: 42,
             ),
           ],
@@ -258,21 +336,21 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
               icon: Icons.rotate_left,
               tooltip: 'Sola Döndür',
               isSelected: false,
-              onPressed: () => state.rotateLeft(),
+              onPressed: () => provider.rotateLeft(),
               size: 42,
             ),
             ToolButton(
               icon: Icons.rotate_right,
               tooltip: 'Sağa Döndür',
               isSelected: false,
-              onPressed: () => state.rotateRight(),
+              onPressed: () => provider.rotateRight(),
               size: 42,
             ),
             ToolButton(
               icon: Icons.refresh,
               tooltip: 'Döndürmeyi Sıfırla',
               isSelected: false,
-              onPressed: () => state.resetRotation(),
+              onPressed: () => provider.resetRotation(),
               size: 42,
             ),
           ],
@@ -295,52 +373,139 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
               icon: Icons.pan_tool,
               tooltip: 'Kaydır / Swipe',
               isSelected: tool.mouse || tool.grab,
-              onPressed: () => state.setMouse(true),
+              onPressed: () => _updateTool(
+                provider,
+                (t) => t.copyWith(
+                  mouse: true,
+                  grab: false,
+                  pencil: false,
+                  highlighter: false,
+                  eraser: false,
+                  shape: false,
+                  selection: false,
+                  magnifier: false,
+                ),
+              ),
             ),
             ToolButton(
               icon: Icons.brush,
               tooltip: 'Kalem',
               isSelected: tool.pencil,
-              onPressed: () => state.setPencil(true),
+              onPressed: () => _updateTool(
+                provider,
+                (t) => t.copyWith(
+                  pencil: true,
+                  mouse: false,
+                  grab: false,
+                  highlighter: false,
+                  eraser: false,
+                  shape: false,
+                  selection: false,
+                  magnifier: false,
+                ),
+              ),
             ),
             ToolButton(
               icon: Icons.highlight,
               tooltip: 'Fosforlu Kalem',
               isSelected: tool.highlighter,
               selectedColor: Colors.yellow.shade600,
-              onPressed: () => state.setHighlighter(true),
+              onPressed: () => _updateTool(
+                provider,
+                (t) => t.copyWith(
+                  highlighter: true,
+                  pencil: false,
+                  mouse: false,
+                  grab: false,
+                  eraser: false,
+                  shape: false,
+                  selection: false,
+                  magnifier: false,
+                ),
+              ),
             ),
             ToolButton(
               icon: Icons.category,
               tooltip: 'Şekiller',
               isSelected: tool.shape,
-              onPressed: () => state.setShape(true),
+              onPressed: () => _updateTool(
+                provider,
+                (t) => t.copyWith(
+                  shape: true,
+                  pencil: false,
+                  mouse: false,
+                  grab: false,
+                  highlighter: false,
+                  eraser: false,
+                  selection: false,
+                  magnifier: false,
+                ),
+              ),
             ),
             ToolButton(
               icon: Icons.crop_free,
               tooltip: 'Alan Seç',
               isSelected: tool.selection,
               selectedColor: const Color(0xFF2196F3),
-              onPressed: () => state.setSelection(!tool.selection),
+              onPressed: () => _updateTool(
+                provider,
+                (t) => t.copyWith(
+                  selection: !t.selection,
+                  pencil: false,
+                  mouse: false,
+                  grab: false,
+                  highlighter: false,
+                  eraser: false,
+                  shape: false,
+                  magnifier: false,
+                ),
+              ),
             ),
             ToolButton(
               icon: Icons.search,
               tooltip: 'Büyüteç',
               isSelected: tool.magnifier,
               selectedColor: const Color(0xFF9C27B0),
-              onPressed: () => state.setMagnifier(!tool.magnifier),
+              onPressed: () => _updateTool(
+                provider,
+                (t) => t.copyWith(
+                  magnifier: !t.magnifier,
+                  pencil: false,
+                  mouse: false,
+                  grab: false,
+                  highlighter: false,
+                  eraser: false,
+                  shape: false,
+                  selection: false,
+                ),
+              ),
             ),
             ToolButton(
               icon: Icons.cleaning_services,
               tooltip: 'Silgi',
               isSelected: tool.eraser,
-              onPressed: () => state.setEraser(true),
+              onPressed: () => _updateTool(
+                provider,
+                (t) => t.copyWith(
+                  eraser: true,
+                  pencil: false,
+                  mouse: false,
+                  grab: false,
+                  highlighter: false,
+                  shape: false,
+                  selection: false,
+                  magnifier: false,
+                ),
+              ),
             ),
             ToolButton(
               icon: FontAwesome.trash_o,
               tooltip: 'Sayfayı Temizle',
               isSelected: false,
-              onPressed: () => state.clearCurrentPage(),
+              onPressed: () {
+                provider.clearCurrentPage();
+                widget.onClear?.call();
+              },
             ),
           ],
         ),
@@ -350,7 +515,21 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
           const SizedBox(height: 12),
           ShapeSelector(
             selectedShape: tool.selectedShape,
-            onShapeSelected: (shape) => state.setSelectedShape(shape),
+            onShapeSelected: (shape) {
+              print('🔷 Şekil seçildi: $shape');
+              // Update DrawingProvider
+              provider.setTool(
+                (t) => t.copyWith(selectedShape: shape, shape: true),
+              );
+              // Also update toolNotifier if provided
+              if (widget.toolNotifier != null) {
+                print('🔷 toolNotifier güncelleniyor: $shape');
+                widget.toolNotifier!.value = widget.toolNotifier!.value.copyWith(
+                  selectedShape: shape,
+                  shape: true,
+                );
+              }
+            },
           ),
         ],
 
@@ -366,7 +545,18 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
         Center(
           child: ColorPickerButton(
             currentColor: tool.color,
-            onColorChanged: (color) => state.setColor(color),
+            onColorChanged: (color) {
+              print('🎨 Renk seçildi: $color');
+              // Update DrawingProvider
+              provider.setColor(color);
+              // Also update toolNotifier if provided
+              if (widget.toolNotifier != null) {
+                print('🎨 toolNotifier güncelleniyor: $color');
+                widget.toolNotifier!.value = widget.toolNotifier!.value.copyWith(
+                  color: color,
+                );
+              }
+            },
             size: 50,
           ),
         ),
@@ -378,7 +568,18 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
           width: tool.width,
           min: 2.0,
           max: 10.0,
-          onChanged: (value) => state.setWidth(value),
+          onChanged: (value) {
+            print('📏 Kalınlık seçildi: $value');
+            // Update DrawingProvider
+            provider.setWidth(value);
+            // Also update toolNotifier if provided
+            if (widget.toolNotifier != null) {
+              print('📏 toolNotifier güncelleniyor: $value');
+              widget.toolNotifier!.value = widget.toolNotifier!.value.copyWith(
+                width: value,
+              );
+            }
+          },
           label: 'Kalınlık',
         ),
       ],
@@ -387,22 +588,18 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final state = widget.drawingKey.currentState;
-    if (state == null || !_isInitialized) {
+    if (!_isInitialized) {
       return const SizedBox.shrink();
     }
 
-    // Calculate screen-dependent values (don't use setState in build)
     final screenHeight = MediaQuery.of(context).size.height;
-    final calculatedMaxHeight = screenHeight / 2;
+    final calculatedMaxHeight = (screenHeight / 2) + 200;
 
-    // Update max height if needed (only once, not every build)
     if (_maxHeight != calculatedMaxHeight) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           setState(() {
             _maxHeight = calculatedMaxHeight;
-            // Clamp current height to new max
             if (_panelHeight > _maxHeight) {
               _panelHeight = _maxHeight;
             }
@@ -411,14 +608,13 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
       });
     }
 
-    return ValueListenableBuilder<ToolState>(
-      valueListenable: state.toolNotifier,
-      builder: (_, tool, __) {
+    return Consumer<DrawingProvider>(
+      builder: (context, provider, child) {
+        final tool = provider.toolState;
         final scheme = Theme.of(context).colorScheme;
 
         return Stack(
           children: [
-            // Main panel
             Positioned(
               left: _position.dx,
               top: _position.dy,
@@ -503,10 +699,14 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
 
                         // Content
                         if (_isCollapsed)
-                          _buildCollapsedContent(tool, scheme, state)
+                          _buildCollapsedContent(tool, scheme, provider)
                         else
                           Expanded(
-                            child: _buildExpandedContent(tool, scheme, state),
+                            child: _buildExpandedContent(
+                              tool,
+                              scheme,
+                              provider,
+                            ),
                           ),
                       ],
                     ),
@@ -556,7 +756,7 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
                 onPanStart: () => setState(() => _isResizingBottom = true),
                 onPanUpdate: (delta) {
                   setState(() {
-                    final newHeight = (_panelHeight + delta.dy).clamp(
+                    var newHeight = (_panelHeight + delta.dy).clamp(
                       _minHeight,
                       _maxHeight,
                     );
@@ -629,7 +829,11 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
       left: left,
       top: top,
       child: MouseRegion(
-        cursor: cursor ?? (isHorizontal ? SystemMouseCursors.resizeUpDown : SystemMouseCursors.resizeLeftRight),
+        cursor:
+            cursor ??
+            (isHorizontal
+                ? SystemMouseCursors.resizeUpDown
+                : SystemMouseCursors.resizeLeftRight),
         child: GestureDetector(
           onPanStart: (_) => onPanStart(),
           onPanUpdate: (details) => onPanUpdate(details.delta),
@@ -651,44 +855,44 @@ class _FloatingLeftPanelState extends State<FloatingLeftPanel> {
             ),
             child: Center(
               child: isHorizontal
-                ? Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(
-                      3,
-                      (i) => Padding(
-                        padding: EdgeInsets.only(left: i > 0 ? 4 : 0),
-                        child: Container(
-                          width: 8,
-                          height: 3,
-                          decoration: BoxDecoration(
-                            color: scheme.onSurfaceVariant.withValues(
-                              alpha: 0.6,
+                  ? Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(
+                        3,
+                        (i) => Padding(
+                          padding: EdgeInsets.only(left: i > 0 ? 4 : 0),
+                          child: Container(
+                            width: 8,
+                            height: 3,
+                            decoration: BoxDecoration(
+                              color: scheme.onSurfaceVariant.withValues(
+                                alpha: 0.6,
+                              ),
+                              borderRadius: BorderRadius.circular(1.5),
                             ),
-                            borderRadius: BorderRadius.circular(1.5),
+                          ),
+                        ),
+                      ),
+                    )
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: List.generate(
+                        3,
+                        (i) => Padding(
+                          padding: EdgeInsets.only(top: i > 0 ? 4 : 0),
+                          child: Container(
+                            width: 3,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: scheme.onSurfaceVariant.withValues(
+                                alpha: 0.6,
+                              ),
+                              borderRadius: BorderRadius.circular(1.5),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  )
-                : Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(
-                      3,
-                      (i) => Padding(
-                        padding: EdgeInsets.only(top: i > 0 ? 4 : 0),
-                        child: Container(
-                          width: 3,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: scheme.onSurfaceVariant.withValues(
-                              alpha: 0.6,
-                            ),
-                            borderRadius: BorderRadius.circular(1.5),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
             ),
           ),
         ),

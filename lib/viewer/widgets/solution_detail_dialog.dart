@@ -1,5 +1,7 @@
 import 'dart:typed_data';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:archive/archive.dart';
 import '../../models/crop_data.dart';
 import 'animation_player_widget.dart';
 import 'drawable_content_widget.dart';
@@ -10,6 +12,7 @@ class SolutionDetailDialog extends StatefulWidget {
   final String baseDirectory;
   final String? zipFilePath;
   final Uint8List? zipBytes; // Web platformu için
+  final Uint8List? cropImage; // Soru resmi (crop'un image'ı)
 
   const SolutionDetailDialog({
     super.key,
@@ -17,6 +20,7 @@ class SolutionDetailDialog extends StatefulWidget {
     required this.baseDirectory,
     this.zipFilePath,
     this.zipBytes,
+    this.cropImage,
   });
 
   @override
@@ -26,8 +30,17 @@ class SolutionDetailDialog extends StatefulWidget {
 class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
   final GlobalKey<AnimationPlayerWidgetState> _animationKey =
       GlobalKey<AnimationPlayerWidgetState>();
+
+  // Image viewer state
+  bool _showImageViewer = false;
+  Uint8List? _loadedCropImage; // Yüklenen crop image
   final GlobalKey<DrawableContentWidgetState> _drawableKey =
       GlobalKey<DrawableContentWidgetState>();
+
+  // Solution images state
+  List<Uint8List> _loadedSolutionImages = [];
+  int _currentSolutionImageIndex = 0;
+  bool _showSolutionImageViewer = false;
 
   // Drawing state
   bool _isDrawingMode = false;
@@ -46,6 +59,191 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
       width: 2.0,
     ),
   );
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCropImage();
+    _loadSolutionImages();
+  }
+
+  Future<void> _loadCropImage() async {
+    try {
+      print('📸 Crop resmi yükleniyor...');
+      print('   imageFile: ${widget.crop.imageFile}');
+      print('   cropImage (constructor): ${widget.cropImage != null}');
+
+      // Önce constructor'dan gelen image'ı kullan
+      if (widget.cropImage != null) {
+        setState(() {
+          _loadedCropImage = widget.cropImage;
+        });
+        print('✅ Crop resmi constructor\'dan yüklendi');
+        return;
+      }
+
+      // Eğer yok ise, file'dan veya zip'ten yükle
+      Uint8List? imageBytes;
+
+      if (widget.zipBytes != null || widget.zipFilePath != null) {
+        // ZIP'ten yükle
+        final zipBytes =
+            widget.zipBytes ??
+            (widget.zipFilePath != null
+                ? await File(widget.zipFilePath!).readAsBytes()
+                : null);
+
+        if (zipBytes != null) {
+          final archive = ZipDecoder().decodeBytes(zipBytes);
+          final imageFileName = widget.crop.imageFile.split('/').last;
+
+          for (final file in archive) {
+            if (file.name.endsWith(imageFileName) && file.isFile) {
+              imageBytes = file.content as Uint8List;
+              print('✅ Resim ZIP\'ten bulundu: ${file.name}');
+              break;
+            }
+          }
+        }
+      } else {
+        // File system'den yükle
+        final imagePath = '${widget.baseDirectory}/${widget.crop.imageFile}';
+        final imageFile = File(imagePath);
+
+        if (await imageFile.exists()) {
+          imageBytes = await imageFile.readAsBytes();
+          print('✅ Resim dosyadan yüklendi: $imagePath');
+        } else {
+          print('❌ Resim dosyası bulunamadı: $imagePath');
+        }
+      }
+
+      if (imageBytes != null && mounted) {
+        setState(() {
+          _loadedCropImage = imageBytes;
+        });
+        print('✅ Crop resmi başarıyla yüklendi (${imageBytes.length} bytes)');
+      } else {
+        print('⚠️ Crop resmi yüklenemedi');
+      }
+    } catch (e) {
+      print('❌ Crop resmi yükleme hatası: $e');
+    }
+  }
+
+  Future<void> _loadSolutionImages() async {
+    print('🔍 _loadSolutionImages çağrıldı');
+    print('   solutionMetadata: ${widget.crop.solutionMetadata}');
+
+    final solutionImages = widget.crop.solutionMetadata?.solutionImages;
+    print('   solutionImages: $solutionImages');
+
+    if (solutionImages == null || solutionImages.isEmpty) {
+      print('   ⚠️ solutionImages null veya boş');
+      return;
+    }
+
+    try {
+      print(
+        '🖼️ Çözüm resimleri yükleniyor... (${solutionImages.length} adet)',
+      );
+      print('   baseDirectory: ${widget.baseDirectory}');
+      print('   zipFilePath: ${widget.zipFilePath}');
+      print('   zipBytes: ${widget.zipBytes != null ? "var" : "yok"}');
+
+      final List<Uint8List> loadedImages = [];
+
+      for (final imagePath in solutionImages) {
+        print('   📄 Aranan resim: $imagePath');
+        Uint8List? imageBytes;
+
+        if (widget.zipBytes != null || widget.zipFilePath != null) {
+          // ZIP'ten yükle
+          final zipBytes =
+              widget.zipBytes ??
+              (widget.zipFilePath != null
+                  ? await File(widget.zipFilePath!).readAsBytes()
+                  : null);
+
+          if (zipBytes != null) {
+            final archive = ZipDecoder().decodeBytes(zipBytes);
+            print('   📦 ZIP içeriği (toplam ${archive.length} dosya):');
+
+            for (final file in archive) {
+              if (file.isFile && file.name.contains('solution')) {
+                print('      - ${file.name}');
+              }
+            }
+
+            // Önce tam path ile dene
+            for (final file in archive) {
+              if (file.name == imagePath && file.isFile) {
+                imageBytes = file.content as Uint8List;
+                print(
+                  '   ✅ Çözüm resmi ZIP\'ten bulundu (tam eşleşme): ${file.name}',
+                );
+                break;
+              }
+            }
+
+            // Eğer bulunamadıysa, dosya adı ile dene
+            if (imageBytes == null) {
+              final imageFileName = imagePath.split('/').last;
+              print(
+                '   🔍 Tam path bulunamadı, dosya adı ile deneniyor: $imageFileName',
+              );
+
+              for (final file in archive) {
+                if (file.name.endsWith(imageFileName) && file.isFile) {
+                  imageBytes = file.content as Uint8List;
+                  print(
+                    '   ✅ Çözüm resmi ZIP\'ten bulundu (dosya adı eşleşmesi): ${file.name}',
+                  );
+                  break;
+                }
+              }
+            }
+
+            if (imageBytes == null) {
+              print('   ❌ Resim ZIP\'te bulunamadı: $imagePath');
+            }
+          }
+        } else {
+          // File system'den yükle
+          final fullPath = '${widget.baseDirectory}/$imagePath';
+          final imageFile = File(fullPath);
+
+          if (await imageFile.exists()) {
+            imageBytes = await imageFile.readAsBytes();
+            print('✅ Çözüm resmi dosyadan yüklendi: $fullPath');
+          } else {
+            print('❌ Çözüm resmi dosyası bulunamadı: $fullPath');
+          }
+        }
+
+        if (imageBytes != null) {
+          loadedImages.add(imageBytes);
+        }
+      }
+
+      if (loadedImages.isNotEmpty && mounted) {
+        setState(() {
+          _loadedSolutionImages = loadedImages;
+        });
+        print('✅ ${loadedImages.length} çözüm resmi başarıyla yüklendi');
+        print(
+          '   _loadedSolutionImages.length: ${_loadedSolutionImages.length}',
+        );
+      } else {
+        print('⚠️ Hiç resim yüklenemedi veya widget unmounted');
+        print('   loadedImages.length: ${loadedImages.length}');
+        print('   mounted: $mounted');
+      }
+    } catch (e) {
+      print('❌ Çözüm resimleri yükleme hatası: $e');
+      print('   Stack trace: ${StackTrace.current}');
+    }
+  }
 
   @override
   void dispose() {
@@ -84,15 +282,11 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
   }
 
   void _selectShape(ShapeType shape) {
-    _toolNotifier.value = _toolNotifier.value.copyWith(
-      selectedShape: shape,
-    );
+    _toolNotifier.value = _toolNotifier.value.copyWith(selectedShape: shape);
   }
 
   void _selectColor(Color color) {
-    _toolNotifier.value = _toolNotifier.value.copyWith(
-      color: color,
-    );
+    _toolNotifier.value = _toolNotifier.value.copyWith(color: color);
   }
 
   void _clearDrawing() {
@@ -105,6 +299,9 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
 
   @override
   Widget build(BuildContext context) {
+    print(
+      '🔄 build() çağrıldı - _loadedSolutionImages.length: ${_loadedSolutionImages.length}',
+    );
     return Dialog(
       insetPadding: const EdgeInsets.all(16),
       child: Container(
@@ -136,7 +333,7 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Soru ${widget.crop.questionNumber ?? "?"} - Çözüm Animasyonu',
+                      'Soru ${widget.crop.questionNumber ?? "?"} - Çözüm',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -160,309 +357,580 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
 
             // Content - Horizontal Layout
             Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Stack(
                 children: [
-                  // Left Side - Animation Player with Drawing
-                  Expanded(
-                    flex: 2,
-                    child: Container(
-                      padding: const EdgeInsets.all(16),
-                      child: Stack(
-                        children: [
-                          // Content with drawing layer
-                          widget.crop.userSolution?.hasAnimationData == true &&
-                                  widget.crop.userSolution?.drawingDataFile != null
-                              ? DrawableContentWidget(
-                                  key: _drawableKey,
-                                  isDrawingEnabled: _isDrawingMode,
-                                  toolNotifier: _toolNotifier,
-                                  child: AnimationPlayerWidget(
-                                    key: _animationKey,
-                                    animationDataPath:
-                                        widget.crop.userSolution!.drawingDataFile!,
-                                    baseDirectory: widget.baseDirectory,
-                                    zipFilePath: widget.zipFilePath,
-                                    zipBytes: widget.zipBytes,
-                                  ),
-                                )
-                              : const Center(
-                                  child: Text('Animasyon verisi bulunamadı'),
-                                ),
-
-                          // Drawing toolbar (top-left)
-                          if (_isDrawingMode)
-                            Positioned(
-                              top: 8,
-                              left: 8,
-                              child: _buildDrawingToolbar(),
-                            ),
-
-                          // Drawing mode toggle button (top-right)
-                          Positioned(
-                            top: 8,
-                            right: 8,
-                            child: Column(
-                              children: [
-                                FloatingActionButton.small(
-                                  onPressed: _toggleDrawingMode,
-                                  backgroundColor: _isDrawingMode
-                                      ? Theme.of(context).colorScheme.primary
-                                      : Theme.of(context)
-                                          .colorScheme
-                                          .surfaceContainerHighest,
-                                  child: Icon(
-                                    _isDrawingMode ? Icons.check : Icons.edit,
-                                    color: _isDrawingMode
-                                        ? Theme.of(context).colorScheme.onPrimary
-                                        : Theme.of(context)
-                                            .colorScheme
-                                            .onSurfaceVariant,
-                                  ),
-                                ),
-                                if (_isDrawingMode) ...[
-                                  const SizedBox(height: 8),
-                                  FloatingActionButton.small(
-                                    onPressed: _undoDrawing,
-                                    backgroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .surfaceContainerHighest,
-                                    child: Icon(
-                                      Icons.undo,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  FloatingActionButton.small(
-                                    onPressed: _clearDrawing,
-                                    backgroundColor: Theme.of(context)
-                                        .colorScheme
-                                        .errorContainer,
-                                    child: Icon(
-                                      Icons.delete_outline,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onErrorContainer,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  // Divider
-                  VerticalDivider(
-                    width: 1,
-                    thickness: 1,
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                  ),
-
-                  // Right Side - Controls and Answer
-                  Expanded(
-                    flex: 1,
-                    child: Container(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          // Answer Choice (large)
-                          if (widget.crop.solutionMetadata?.answerChoice != null ||
-                              widget.crop.userSolution?.answerChoice != null) ...[
-                            const Text(
-                              'CEVAP',
-                              style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 2,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Container(
-                              width: 100,
-                              height: 100,
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primary,
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .primary
-                                        .withValues(alpha: 0.3),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 8),
-                                  ),
-                                ],
-                              ),
-                              child: Center(
-                                child: Text(
-                                  widget.crop.solutionMetadata?.answerChoice ??
-                                      widget.crop.userSolution?.answerChoice ??
-                                      '?',
-                                  style: TextStyle(
-                                    fontSize: 56,
-                                    fontWeight: FontWeight.bold,
-                                    color: Theme.of(context).colorScheme.onPrimary,
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 32),
-                          ],
-
-                          // Animation Controls
-                          const Text(
-                            'KONTROLLER',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 2,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Control Buttons
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Left Side - Animation Player with Drawing
+                      Expanded(
+                        flex: 2,
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          child: Stack(
                             children: [
-                              // First step
-                              IconButton(
-                                icon: const Icon(Icons.first_page, size: 24),
-                                onPressed: () => _animationKey.currentState?.resetAnimation(),
-                                tooltip: 'İlk Adım',
-                                style: IconButton.styleFrom(
-                                  backgroundColor:
-                                      Theme.of(context).colorScheme.primaryContainer,
-                                  foregroundColor:
-                                      Theme.of(context).colorScheme.onPrimaryContainer,
+                              // Content with drawing layer
+                              widget.crop.userSolution?.hasAnimationData ==
+                                          true &&
+                                      widget
+                                              .crop
+                                              .userSolution
+                                              ?.drawingDataFile !=
+                                          null
+                                  ? DrawableContentWidget(
+                                      key: _drawableKey,
+                                      isDrawingEnabled: _isDrawingMode,
+                                      toolNotifier: _toolNotifier,
+                                      child: AnimationPlayerWidget(
+                                        key: _animationKey,
+                                        animationDataPath: widget
+                                            .crop
+                                            .userSolution!
+                                            .drawingDataFile!,
+                                        baseDirectory: widget.baseDirectory,
+                                        zipFilePath: widget.zipFilePath,
+                                        zipBytes: widget.zipBytes,
+                                      ),
+                                    )
+                                  : _loadedSolutionImages.isNotEmpty
+                                  ? Stack(
+                                      children: [
+                                        Center(
+                                          child: InteractiveViewer(
+                                            minScale: 0.5,
+                                            maxScale: 4.0,
+                                            child: Image.memory(
+                                              _loadedSolutionImages[_currentSolutionImageIndex],
+                                              fit: BoxFit.contain,
+                                            ),
+                                          ),
+                                        ),
+                                        // Navigasyon butonları (birden fazla resim varsa)
+                                        if (_loadedSolutionImages.length >
+                                            1) ...[
+                                          // Sol ok
+                                          if (_currentSolutionImageIndex > 0)
+                                            Positioned(
+                                              left: 16,
+                                              top: 0,
+                                              bottom: 0,
+                                              child: Center(
+                                                child: FloatingActionButton.small(
+                                                  onPressed: () {
+                                                    setState(() {
+                                                      _currentSolutionImageIndex--;
+                                                    });
+                                                  },
+                                                  backgroundColor: Colors.white
+                                                      .withValues(alpha: 0.9),
+                                                  child: const Icon(
+                                                    Icons.chevron_left,
+                                                    color: Colors.black,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          // Sağ ok
+                                          if (_currentSolutionImageIndex <
+                                              _loadedSolutionImages.length - 1)
+                                            Positioned(
+                                              right: 16,
+                                              top: 0,
+                                              bottom: 0,
+                                              child: Center(
+                                                child: FloatingActionButton.small(
+                                                  onPressed: () {
+                                                    setState(() {
+                                                      _currentSolutionImageIndex++;
+                                                    });
+                                                  },
+                                                  backgroundColor: Colors.white
+                                                      .withValues(alpha: 0.9),
+                                                  child: const Icon(
+                                                    Icons.chevron_right,
+                                                    color: Colors.black,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          // Sayaç
+                                          Positioned(
+                                            bottom: 16,
+                                            left: 0,
+                                            right: 0,
+                                            child: Center(
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 12,
+                                                      vertical: 6,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.7),
+                                                  borderRadius:
+                                                      BorderRadius.circular(16),
+                                                ),
+                                                child: Text(
+                                                  '${_currentSolutionImageIndex + 1} / ${_loadedSolutionImages.length}',
+                                                  style: const TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 14,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    )
+                                  : const Center(
+                                      child: Text('Çözüm verisi bulunamadı'),
+                                    ),
+
+                              // Drawing toolbar (top-left)
+                              if (_isDrawingMode)
+                                Positioned(
+                                  top: 8,
+                                  left: 8,
+                                  child: _buildDrawingToolbar(),
+                                ),
+
+                              // Drawing mode toggle button (top-right)
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: Column(
+                                  children: [
+                                    // Soru resmini göster butonu
+                                    FloatingActionButton.small(
+                                      onPressed: _loadedCropImage != null
+                                          ? () {
+                                              setState(() {
+                                                _showImageViewer =
+                                                    !_showImageViewer;
+                                              });
+                                            }
+                                          : null,
+                                      backgroundColor: _showImageViewer
+                                          ? Theme.of(
+                                              context,
+                                            ).colorScheme.primary
+                                          : _loadedCropImage == null
+                                          ? Colors.grey.shade300
+                                          : Theme.of(
+                                              context,
+                                            ).colorScheme.tertiaryContainer,
+                                      tooltip: _loadedCropImage == null
+                                          ? 'Soru resmi yükleniyor...'
+                                          : 'Soru Resmini Göster/Gizle',
+                                      child: Icon(
+                                        _showImageViewer
+                                            ? Icons.image
+                                            : Icons.image_outlined,
+                                        color: _loadedCropImage == null
+                                            ? Colors.grey.shade500
+                                            : _showImageViewer
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.onPrimary
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.onTertiaryContainer,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    FloatingActionButton.small(
+                                      onPressed: _toggleDrawingMode,
+                                      backgroundColor: _isDrawingMode
+                                          ? Theme.of(
+                                              context,
+                                            ).colorScheme.primary
+                                          : Theme.of(context)
+                                                .colorScheme
+                                                .surfaceContainerHighest,
+                                      child: Icon(
+                                        _isDrawingMode
+                                            ? Icons.check
+                                            : Icons.edit,
+                                        color: _isDrawingMode
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.onPrimary
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    if (_isDrawingMode) ...[
+                                      const SizedBox(height: 8),
+                                      FloatingActionButton.small(
+                                        onPressed: _undoDrawing,
+                                        backgroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.surfaceContainerHighest,
+                                        child: Icon(
+                                          Icons.undo,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      FloatingActionButton.small(
+                                        onPressed: _clearDrawing,
+                                        backgroundColor: Theme.of(
+                                          context,
+                                        ).colorScheme.errorContainer,
+                                        child: Icon(
+                                          Icons.delete_outline,
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.onErrorContainer,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              // Previous step
-                              IconButton(
-                                icon: const Icon(Icons.chevron_left, size: 32),
-                                onPressed: () => _animationKey.currentState?.previousStep(),
-                                tooltip: 'Geri',
-                                style: IconButton.styleFrom(
-                                  backgroundColor: Theme.of(context).colorScheme.primary,
-                                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+
+                              // Soru resmi viewer (en üstte - animation kontrollerin üzerinde)
+                              if (_showImageViewer && _loadedCropImage != null)
+                                Positioned.fill(
+                                  child: GestureDetector(
+                                    onTap:
+                                        () {}, // Backdrop'a tıklayınca kapanmasın
+                                    child: Container(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.8,
+                                      ),
+                                      child: Stack(
+                                        children: [
+                                          // Resim
+                                          Center(
+                                            child: InteractiveViewer(
+                                              minScale: 0.5,
+                                              maxScale: 4.0,
+                                              child: Image.memory(
+                                                _loadedCropImage!,
+                                                fit: BoxFit.contain,
+                                              ),
+                                            ),
+                                          ),
+                                          // Kapat butonu
+                                          Positioned(
+                                            top: 16,
+                                            right: 16,
+                                            child: FloatingActionButton(
+                                              onPressed: () {
+                                                setState(() {
+                                                  _showImageViewer = false;
+                                                });
+                                              },
+                                              backgroundColor: Colors.white,
+                                              child: const Icon(
+                                                Icons.close,
+                                                color: Colors.black,
+                                              ),
+                                            ),
+                                          ),
+                                          // Bilgi yazısı
+                                          Positioned(
+                                            bottom: 16,
+                                            left: 0,
+                                            right: 0,
+                                            child: Center(
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 16,
+                                                      vertical: 8,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black
+                                                      .withValues(alpha: 0.7),
+                                                  borderRadius:
+                                                      BorderRadius.circular(20),
+                                                ),
+                                                child: const Text(
+                                                  '🔍 Yakınlaştırmak için parmakla sürükleyin',
+                                                  style: TextStyle(
+                                                    color: Colors.white,
+                                                    fontSize: 14,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Divider
+                      VerticalDivider(
+                        width: 1,
+                        thickness: 1,
+                        color: Theme.of(context).colorScheme.outlineVariant,
+                      ),
+
+                      // Right Side - Controls and Answer
+                      Expanded(
+                        flex: 1,
+                        child: Container(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          child: ListView(
+                            padding: const EdgeInsets.all(16),
+                            children: [
+                              const SizedBox(height: 16),
+                              if (widget.crop.solutionMetadata?.answerChoice !=
+                                      null ||
+                                  widget.crop.userSolution?.answerChoice !=
+                                      null) ...[
+                                _buildAnswerCard(
+                                  context,
+                                  widget.crop.solutionMetadata?.answerChoice ??
+                                      widget.crop.userSolution!.answerChoice!,
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              if (_loadedSolutionImages.isNotEmpty) ...[
+                                _buildSolutionImagesCard(context),
+                                const SizedBox(height: 16),
+                              ],
+                              if (widget.crop.solutionMetadata?.aiSolution !=
+                                  null) ...[
+                                _buildAiSolutionCard(
+                                  context,
+                                  widget.crop.solutionMetadata!.aiSolution!,
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                              // Animation Controls
+                              const Text(
+                                'KONTROLLER',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 2,
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              // Next step
-                              IconButton(
-                                icon: const Icon(Icons.chevron_right, size: 32),
-                                onPressed: () => _animationKey.currentState?.nextStep(),
-                                tooltip: 'İleri',
-                                style: IconButton.styleFrom(
-                                  backgroundColor: Theme.of(context).colorScheme.primary,
-                                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                              const SizedBox(height: 16),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  // First step
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.first_page,
+                                      size: 24,
+                                    ),
+                                    onPressed: () => _animationKey.currentState
+                                        ?.resetAnimation(),
+                                    tooltip: 'İlk Adım',
+                                    style: IconButton.styleFrom(
+                                      backgroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.primaryContainer,
+                                      foregroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimaryContainer,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Previous step
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.chevron_left,
+                                      size: 32,
+                                    ),
+                                    onPressed: () => _animationKey.currentState
+                                        ?.previousStep(),
+                                    tooltip: 'Geri',
+                                    style: IconButton.styleFrom(
+                                      backgroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                      foregroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Next step
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.chevron_right,
+                                      size: 32,
+                                    ),
+                                    onPressed: () =>
+                                        _animationKey.currentState?.nextStep(),
+                                    tooltip: 'İleri',
+                                    style: IconButton.styleFrom(
+                                      backgroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                      foregroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // Last step
+                                  IconButton(
+                                    icon: const Icon(Icons.last_page, size: 24),
+                                    onPressed: () => _animationKey.currentState
+                                        ?.goToLastStep(),
+                                    tooltip: 'Son Adım',
+                                    style: IconButton.styleFrom(
+                                      backgroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.primaryContainer,
+                                      foregroundColor: Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimaryContainer,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Solution image viewer overlay (tam ekran)
+                  if (_showSolutionImageViewer &&
+                      _loadedSolutionImages.isNotEmpty)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        onTap: () {}, // Backdrop'a tıklayınca kapanmasın
+                        child: Container(
+                          color: Colors.black.withValues(alpha: 0.9),
+                          child: Stack(
+                            children: [
+                              // Resim
+                              Center(
+                                child: InteractiveViewer(
+                                  minScale: 0.5,
+                                  maxScale: 4.0,
+                                  child: Image.memory(
+                                    _loadedSolutionImages[_currentSolutionImageIndex],
+                                    fit: BoxFit.contain,
+                                  ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              // Last step
-                              IconButton(
-                                icon: const Icon(Icons.last_page, size: 24),
-                                onPressed: () => _animationKey.currentState?.goToLastStep(),
-                                tooltip: 'Son Adım',
-                                style: IconButton.styleFrom(
-                                  backgroundColor:
-                                      Theme.of(context).colorScheme.primaryContainer,
-                                  foregroundColor:
-                                      Theme.of(context).colorScheme.onPrimaryContainer,
+                              // Kapat butonu
+                              Positioned(
+                                top: 16,
+                                right: 16,
+                                child: FloatingActionButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      _showSolutionImageViewer = false;
+                                    });
+                                  },
+                                  backgroundColor: Colors.white,
+                                  child: const Icon(
+                                    Icons.close,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ),
+                              // Navigasyon ok tuşları (birden fazla resim varsa)
+                              if (_loadedSolutionImages.length > 1) ...[
+                                // Sol ok
+                                if (_currentSolutionImageIndex > 0)
+                                  Positioned(
+                                    left: 16,
+                                    top: 0,
+                                    bottom: 0,
+                                    child: Center(
+                                      child: FloatingActionButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _currentSolutionImageIndex--;
+                                          });
+                                        },
+                                        backgroundColor: Colors.white,
+                                        child: const Icon(
+                                          Icons.chevron_left,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                // Sağ ok
+                                if (_currentSolutionImageIndex <
+                                    _loadedSolutionImages.length - 1)
+                                  Positioned(
+                                    right: 16,
+                                    top: 0,
+                                    bottom: 0,
+                                    child: Center(
+                                      child: FloatingActionButton(
+                                        onPressed: () {
+                                          setState(() {
+                                            _currentSolutionImageIndex++;
+                                          });
+                                        },
+                                        backgroundColor: Colors.white,
+                                        child: const Icon(
+                                          Icons.chevron_right,
+                                          color: Colors.black,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                              // Bilgi yazısı
+                              Positioned(
+                                bottom: 16,
+                                left: 0,
+                                right: 0,
+                                child: Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.7,
+                                      ),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Text(
+                                      _loadedSolutionImages.length > 1
+                                          ? '${_currentSolutionImageIndex + 1} / ${_loadedSolutionImages.length}'
+                                          : 'Çözüm Resmi',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                             ],
                           ),
-
-                          const SizedBox(height: 16),
-
-                          // Step indicator
-                          if (widget.crop.userSolution?.stepsCount != null &&
-                              widget.crop.userSolution!.stepsCount > 0)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.secondaryContainer,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                '${widget.crop.userSolution!.stepsCount} Adım',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSecondaryContainer,
-                                ),
-                              ),
-                            ),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildStatusCard(
-    BuildContext context,
-    bool hasSolution,
-    String? solutionType,
-  ) {
-    final color = hasSolution ? Colors.green : Colors.orange;
-    final icon = hasSolution ? Icons.check_circle : Icons.pending;
-    final statusText = hasSolution ? 'Çözüldü' : 'Çözülmedi';
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 24),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  statusText,
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: color,
-                  ),
-                ),
-                if (solutionType != null)
-                  Text(
-                    _getSolutionTypeText(solutionType),
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -495,10 +963,90 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
             const Expanded(
               child: Text(
                 'Seçilen Cevap',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSolutionImagesCard(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.photo_library,
+                  color: Theme.of(context).colorScheme.secondary,
                 ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Çözüm Resimleri',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.secondaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${_loadedSolutionImages.length} Resim',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.onSecondaryContainer,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 120,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _loadedSolutionImages.length,
+                itemBuilder: (context, index) {
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _currentSolutionImageIndex = index;
+                          _showSolutionImageViewer = true;
+                        });
+                      },
+                      child: Container(
+                        width: 100,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.outline,
+                            width: 1,
+                          ),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.memory(
+                            _loadedSolutionImages[index],
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -523,10 +1071,7 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
                 const SizedBox(width: 8),
                 const Text(
                   'Manuel Çözüm',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ],
             ),
@@ -577,10 +1122,7 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
                 const SizedBox(width: 8),
                 const Text(
                   'AI Çözümü',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const Spacer(),
                 Container(
@@ -589,8 +1131,9 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: _getConfidenceColor(aiSolution.confidence)
-                        .withValues(alpha: 0.2),
+                    color: _getConfidenceColor(
+                      aiSolution.confidence,
+                    ).withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -633,10 +1176,7 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
               const SizedBox(height: 12),
               const Text(
                 'Çözüm Adımları:',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               ...aiSolution.steps.map(
@@ -658,149 +1198,6 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
         ),
       ),
     );
-  }
-
-  Widget _buildSolvedByCard(BuildContext context, List<String> solvedBy) {
-    if (solvedBy.isEmpty) return const SizedBox.shrink();
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Çözüm Yöntemi',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: solvedBy.map((method) {
-                return Chip(
-                  label: Text(_getMethodText(method)),
-                  avatar: Icon(
-                    _getMethodIcon(method),
-                    size: 16,
-                  ),
-                  visualDensity: VisualDensity.compact,
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetailsCard(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Soru Detayları',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildDetailRow('Sayfa', '${widget.crop.pageNumber}'),
-            _buildDetailRow('Sınıf', widget.crop.className),
-            _buildDetailRow(
-              'Güven',
-              '%${(widget.crop.confidence * 100).toInt()}',
-            ),
-            if (widget.crop.questionNumberDetails != null) ...[
-              _buildDetailRow(
-                'Soru No',
-                widget.crop.questionNumberDetails!.text,
-              ),
-              _buildDetailRow(
-                'OCR Güven',
-                '%${(widget.crop.questionNumberDetails!.ocrConfidence * 100).toInt()}',
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDetailRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            '$label:',
-            style: const TextStyle(
-              fontSize: 13,
-              color: Colors.grey,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-              textAlign: TextAlign.end,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _getSolutionTypeText(String type) {
-    switch (type) {
-      case 'manual':
-        return 'Manuel olarak çözüldü';
-      case 'ai':
-        return 'AI tarafından çözüldü';
-      case 'mixed':
-        return 'Manuel ve AI ile çözüldü';
-      default:
-        return type;
-    }
-  }
-
-  String _getMethodText(String method) {
-    switch (method) {
-      case 'manual':
-        return 'Manuel';
-      case 'ai':
-        return 'AI';
-      case 'drawing':
-        return 'Çizim';
-      default:
-        return method;
-    }
-  }
-
-  IconData _getMethodIcon(String method) {
-    switch (method) {
-      case 'manual':
-        return Icons.edit;
-      case 'ai':
-        return Icons.psychology;
-      case 'drawing':
-        return Icons.draw;
-      default:
-        return Icons.help;
-    }
   }
 
   Color _getConfidenceColor(double confidence) {
@@ -918,9 +1315,15 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
                     const SizedBox(width: 4),
                     _buildColorButton(Colors.green, tool.color == Colors.green),
                     const SizedBox(width: 4),
-                    _buildColorButton(Colors.orange, tool.color == Colors.orange),
+                    _buildColorButton(
+                      Colors.orange,
+                      tool.color == Colors.orange,
+                    ),
                     const SizedBox(width: 4),
-                    _buildColorButton(Colors.purple, tool.color == Colors.purple),
+                    _buildColorButton(
+                      Colors.purple,
+                      tool.color == Colors.purple,
+                    ),
                     const SizedBox(width: 4),
                     _buildColorButton(Colors.black, tool.color == Colors.black),
                   ],
@@ -1013,70 +1416,6 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
                 : Colors.grey.shade300,
             width: isSelected ? 3 : 1,
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAnimationCard(BuildContext context) {
-    if (widget.crop.userSolution?.drawingDataFile == null) {
-      return const SizedBox.shrink();
-    }
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.animation,
-                  color: Theme.of(context).colorScheme.secondary,
-                  size: 20,
-                ),
-                const SizedBox(width: 6),
-                const Text(
-                  'Çözüm Animasyonu',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .secondaryContainer,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '${widget.crop.userSolution!.stepsCount} Adım',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSecondaryContainer,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            AnimationPlayerWidget(
-              animationDataPath: widget.crop.userSolution!.drawingDataFile!,
-              baseDirectory: widget.baseDirectory,
-              zipFilePath: widget.zipFilePath,
-              zipBytes: widget.zipBytes,
-            ),
-          ],
         ),
       ),
     );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../soru_cozucu_service.dart';
+import 'draggable_resizable_dialog.dart';
 
 class AnalysisResultDialog extends StatelessWidget {
   final AnalysisResult result;
@@ -11,88 +12,124 @@ class AnalysisResultDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: 800,
-          maxHeight: MediaQuery.of(context).size.height * 0.8,
-        ),
-        child: Column(
-          children: [
-            // Header
-            _buildHeader(context),
+    final screenSize = MediaQuery.of(context).size;
+    return DraggableResizableDialog(
+      initialWidth: 700,
+      initialHeight: (screenSize.height * 0.7).clamp(500.0, 800.0),
+      minWidth: 500,
+      minHeight: 400,
+      child: Column(
+        children: [
+          // Header - Draggable
+          _buildHeader(context),
 
-            // Content
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Cevaplı görsel varsa göster
-                    if (result.resultImage != null) ...[
-                      _buildResultImage(context),
-                      const SizedBox(height: 24),
-                      const Divider(),
-                      const SizedBox(height: 24),
-                    ],
-
-                    // Soru detayları
-                    const Text(
-                      '📝 Soru Detayları',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    ...result.sorular.asMap().entries.map((entry) {
-                      return _buildQuestionCard(context, entry.value);
-                    }),
+          // Content
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Cevaplı görsel varsa göster
+                  if (result.resultImage != null) ...[
+                    _buildResultImage(context),
+                    const SizedBox(height: 24),
+                    const Divider(),
+                    const SizedBox(height: 24),
                   ],
-                ),
+
+                  // Soru detayları
+                  const Text(
+                    '📝 Soru Detayları',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  ...result.sorular.asMap().entries.map((entry) {
+                    return _buildQuestionCard(context, entry.value);
+                  }),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
   Widget _buildHeader(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-        ),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.check_circle,
-            color: Colors.white,
-            size: 28,
+    return DraggableDialogHeader(
+      onClose: () => Navigator.pop(context),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.primary,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              '${result.soruSayisi} Soru Bulundu',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+        ),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.check_circle,
+              color: Colors.white,
+              size: 28,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${result.soruSayisi} Soru Bulundu',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  // Drag indicator
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: const [
+                        Icon(
+                          Icons.drag_indicator,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                        SizedBox(width: 4),
+                        Text(
+                          'Taşı',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.white),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ],
+            const SizedBox(width: 12),
+            IconButton(
+              icon: const Icon(Icons.close, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -109,12 +146,18 @@ class AnalysisResultDialog extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: Image.memory(
-            result.resultImage!,
-            fit: BoxFit.contain,
-            width: double.infinity,
+        // Resmi sınırlı boyutta göster
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: 600, // Maksimum yükseklik
+            maxWidth: double.infinity,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.memory(
+              result.resultImage!,
+              fit: BoxFit.contain,
+            ),
           ),
         ),
       ],
