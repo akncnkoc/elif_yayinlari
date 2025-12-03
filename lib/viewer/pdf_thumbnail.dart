@@ -1,24 +1,25 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
-import 'package:pdfx/pdfx.dart';
+import 'package:pdfrx/pdfrx.dart';
 
 // Global thumbnail cache - PDF ID ve sayfa numarasına göre cache tutar
 class ThumbnailCache {
-  static final Map<String, Map<int, PdfPageImage>> _cache = {};
+  static final Map<String, Map<int, ui.Image>> _cache = {};
 
-  static String _getCacheKey(PdfController controller) {
+  static String _getCacheKey(PdfViewerController controller) {
     return controller.hashCode.toString();
   }
 
-  static PdfPageImage? get(PdfController controller, int pageNumber) {
+  static ui.Image? get(PdfViewerController controller, int pageNumber) {
     final key = _getCacheKey(controller);
     return _cache[key]?[pageNumber];
   }
 
   static void put(
-    PdfController controller,
+    PdfViewerController controller,
     int pageNumber,
-    PdfPageImage image,
+    ui.Image image,
   ) {
     final key = _getCacheKey(controller);
     _cache[key] ??= {};
@@ -29,14 +30,15 @@ class ThumbnailCache {
     _cache.clear();
   }
 
-  static void clearForController(PdfController controller) {
+  static void clearForController(PdfViewerController controller) {
     final key = _getCacheKey(controller);
     _cache.remove(key);
   }
 }
 
 class PdfThumbnailList extends StatefulWidget {
-  final PdfController pdfController;
+  final PdfViewerController pdfController;
+  final Future<PdfDocument> pdfDocument;
   final int currentPage;
   final int totalPages;
   final Function(int) onPageSelected;
@@ -44,6 +46,7 @@ class PdfThumbnailList extends StatefulWidget {
   const PdfThumbnailList({
     super.key,
     required this.pdfController,
+    required this.pdfDocument,
     required this.currentPage,
     required this.totalPages,
     required this.onPageSelected,
@@ -146,6 +149,7 @@ class _PdfThumbnailListState extends State<PdfThumbnailList> {
               final pageNumber = index + 1;
               return PdfThumbnail(
                 controller: widget.pdfController,
+                pdfDocument: widget.pdfDocument,
                 pageNumber: pageNumber,
                 isCurrentPage: pageNumber == widget.currentPage,
                 onTap: () => widget.onPageSelected(pageNumber),
@@ -160,7 +164,8 @@ class _PdfThumbnailListState extends State<PdfThumbnailList> {
 
 // PdfThumbnail widget'ı buraya eklenecek
 class PdfThumbnail extends StatefulWidget {
-  final PdfController controller;
+  final PdfViewerController controller;
+  final Future<PdfDocument> pdfDocument;
   final int pageNumber;
   final bool isCurrentPage;
   final VoidCallback onTap;
@@ -168,6 +173,7 @@ class PdfThumbnail extends StatefulWidget {
   const PdfThumbnail({
     super.key,
     required this.controller,
+    required this.pdfDocument,
     required this.pageNumber,
     required this.isCurrentPage,
     required this.onTap,
@@ -178,7 +184,7 @@ class PdfThumbnail extends StatefulWidget {
 }
 
 class _PdfThumbnailState extends State<PdfThumbnail> {
-  PdfPageImage? _cachedImage;
+  ui.Image? _cachedImage;
   bool _isLoading = false;
   bool _isHovering = false;
 
@@ -210,27 +216,39 @@ class _PdfThumbnailState extends State<PdfThumbnail> {
     setState(() => _isLoading = true);
 
     try {
-      final document = await widget.controller.document;
-      final page = await document.getPage(widget.pageNumber);
-      final image = await page.render(
-        width: page.width * 2.0,
-        height: page.height * 2.0,
+      // pdfrx: Use pdfDocument pages
+      final document = await widget.pdfDocument;
+      if (widget.pageNumber < 1 || widget.pageNumber > document.pages.length) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+        }
+        return;
+      }
+      final page = document.pages[widget.pageNumber - 1]; // Pages are 0-indexed
+
+      // pdfrx: Render the page to get image
+      final pageImage = await page.render(
+        width: (page.width * 2.0).round(),
+        height: (page.height * 2.0).round(),
+        fullWidth: (page.width * 2.0).round().toDouble(),
+        fullHeight: (page.height * 2.0).round().toDouble(),
       );
 
-      if (image != null) {
-        ThumbnailCache.put(widget.controller, widget.pageNumber, image);
-      }
-      // Global cache'e ekle
+      if (pageImage != null) {
+        final image = await pageImage.createImage();
+        if (image != null) {
+          ThumbnailCache.put(widget.controller, widget.pageNumber, image);
 
-      if (mounted) {
-        setState(() {
-          _cachedImage = image;
-          _isLoading = false;
-        });
+          if (mounted) {
+            setState(() {
+              _cachedImage = image;
+              _isLoading = false;
+            });
+          }
+        }
       }
-
-      await page.close();
     } catch (e) {
+      print('Error loading thumbnail for page ${widget.pageNumber}: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }
@@ -287,7 +305,7 @@ class _PdfThumbnailState extends State<PdfThumbnail> {
                       topRight: Radius.circular(11),
                     ),
                     child: _cachedImage != null
-                        ? Image.memory(_cachedImage!.bytes, fit: BoxFit.cover)
+                        ? RawImage(image: _cachedImage, fit: BoxFit.cover)
                         : Center(
                             child: CircularProgressIndicator(
                               strokeWidth: 2,

@@ -1,9 +1,9 @@
 import 'dart:io';
-import 'dart:typed_data';
+import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:pdfx/pdfx.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'package:vector_math/vector_math_64.dart' show Vector3;
 import 'package:archive/archive.dart';
 import 'package:image/image.dart' as img;
@@ -23,9 +23,11 @@ import 'dart:math' as math;
 // Import new components and utilities
 import '../core/constants/app_constants.dart';
 import '../core/utils/matrix_utils.dart' as custom_matrix;
+import '../core/extensions/pdf_viewer_controller_extensions.dart';
 
 class PdfViewerWithDrawing extends StatefulWidget {
-  final PdfController controller;
+  final PdfViewerController controller;
+  final Future<PdfDocument> documentRef;
   final CropData? cropData;
   final String? zipFilePath;
   final Uint8List? zipBytes; // Web platformu için zip bytes
@@ -33,6 +35,7 @@ class PdfViewerWithDrawing extends StatefulWidget {
   const PdfViewerWithDrawing({
     super.key,
     required this.controller,
+    required this.documentRef,
     this.cropData,
     this.zipFilePath,
     this.zipBytes,
@@ -135,7 +138,9 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   @override
   void initState() {
     super.initState();
-    widget.controller.pageListenable.addListener(_onPageChanged);
+    // pdfrx: Controller listener now tracks page changes via onPageChanged callback
+    // or by listening to controller changes and checking pageNumber
+    widget.controller.addListener(_onPageChanged);
     transformationController.addListener(_onTransformChanged);
 
     _timeTracker = PageTimeTracker(onUpdate: _updateTimeDisplay);
@@ -149,6 +154,10 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       if (mounted) {
         _drawingProvider = context.read<DrawingProvider>();
         _drawingProvider!.addListener(_onDrawingProviderChanged);
+        // Initialize current page from controller when ready
+        if (widget.controller.isReady && widget.controller.pageNumber != null) {
+          _currentPage = widget.controller.pageNumber!;
+        }
       }
     });
   }
@@ -177,7 +186,10 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   }
 
   void _onPageChanged() {
-    final page = widget.controller.pageListenable.value;
+    // pdfrx: Check if page number has changed
+    if (!widget.controller.isReady || widget.controller.pageNumber == null) return;
+
+    final page = widget.controller.pageNumber!;
     if (page != _currentPage) {
       setState(() => _currentPage = page);
       _repaintNotifier.value++;
@@ -197,7 +209,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
 
   @override
   void dispose() {
-    widget.controller.pageListenable.removeListener(_onPageChanged);
+    widget.controller.removeListener(_onPageChanged);
     transformationController.removeListener(_onTransformChanged);
     transformationController.dispose();
     _repaintNotifier.dispose();
@@ -357,27 +369,30 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
           _panStartTime != null) {
         final distance = _panLastPosition! - _panStartPosition!;
         final duration = DateTime.now().difference(_panStartTime!);
-        final velocity = distance.dx.abs() / (duration.inMilliseconds / 1000.0);
+        final velocity = distance.dy.abs() / (duration.inMilliseconds / 1000.0);
 
-        final isHorizontalSwipe = distance.dx.abs() > distance.dy.abs() * 2.0;
+        // Dikey swipe - dy kullan (yatay yerine)
+        final isVerticalSwipe = distance.dy.abs() > distance.dx.abs() * 2.0;
 
         final isFastEnough = velocity > _swipeVelocityThreshold;
-        final isLongEnough = distance.dx.abs() > _swipeDistanceThreshold;
+        final isLongEnough = distance.dy.abs() > _swipeDistanceThreshold;
 
-        if (isHorizontalSwipe && isFastEnough && isLongEnough) {
+        if (isVerticalSwipe && isFastEnough && isLongEnough) {
           setState(() {
             transformationController.value = Matrix4.identity();
             _lastRenderedScale = 1.0;
             _pdfScaleNotifier.value = 1.0;
           });
 
-          if (distance.dx > 0) {
-            widget.controller.previousPage(
+          // Yukarı kaydırma (negatif dy) -> Sonraki sayfa
+          // Aşağı kaydırma (pozitif dy) -> Önceki sayfa
+          if (distance.dy < 0) {
+            widget.controller.nextPage(
               duration: const Duration(milliseconds: 500),
               curve: Curves.easeOutCubic,
             );
           } else {
-            widget.controller.nextPage(
+            widget.controller.previousPage(
               duration: const Duration(milliseconds: 500),
               curve: Curves.easeOutCubic,
             );
@@ -1424,31 +1439,26 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       return const SizedBox.shrink();
     }
 
+    // pdfrx: Use documentRef instead of controller.document
     return FutureBuilder<PdfDocument>(
-      future: widget.controller.document,
+      future: widget.documentRef,
       builder: (context, docSnapshot) {
         if (!docSnapshot.hasData) {
           return const SizedBox.shrink();
         }
 
-        return FutureBuilder<PdfPage>(
-          future: docSnapshot.data!.getPage(_currentPage),
-          builder: (context, pageSnapshot) {
-            if (!pageSnapshot.hasData) {
-              return const SizedBox.shrink();
-            }
+        // pdfrx: Use pages list (0-indexed)
+        final pdfPage = docSnapshot.data!.pages[_currentPage - 1];
+        final pdfWidth = pdfPage.width;
+        final pdfHeight = pdfPage.height;
 
-            final pdfPage = pageSnapshot.data!;
-            final pdfWidth = pdfPage.width;
-            final pdfHeight = pdfPage.height;
+        final cropReferenceSize = widget.cropData!.getReferenceSizeForPage(
+          _currentPage,
+        );
+        final cropRefWidth = cropReferenceSize.width;
+        final cropRefHeight = cropReferenceSize.height;
 
-            final cropReferenceSize = widget.cropData!.getReferenceSizeForPage(
-              _currentPage,
-            );
-            final cropRefWidth = cropReferenceSize.width;
-            final cropRefHeight = cropReferenceSize.height;
-
-            return LayoutBuilder(
+        return LayoutBuilder(
               builder: (context, constraints) {
                 final renderedWidth = constraints.maxWidth;
                 final renderedHeight = constraints.maxHeight;
@@ -1623,8 +1633,6 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                 );
               },
             );
-          },
-        );
       },
     );
   }
@@ -1718,7 +1726,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                 minScale: _minZoom,
                 maxScale: _maxZoom,
                 boundaryMargin: const EdgeInsets.all(20),
-                panEnabled: tool.mouse || tool.grab,
+                panEnabled: true, // Her zaman pan aktif - zoom sonrası kaydırma için
                 scaleEnabled: true,
                 child: Listener(
                   onPointerDown: (event) {
@@ -1747,21 +1755,83 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                     angle: _rotationAngle,
                     child: Stack(
                       children: [
-                        ValueListenableBuilder<double>(
-                          valueListenable: _pdfScaleNotifier,
-                          builder: (context, scale, child) {
-                            final quality = (scale * 6).clamp(4.0, 12.0);
-
-                            return PdfView(
+                        // pdfrx: Use FutureBuilder to load document then wrap in PdfDocumentRefDirect
+                        FutureBuilder<PdfDocument>(
+                          future: widget.documentRef,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const Center(child: CircularProgressIndicator());
+                            }
+                            if (!snapshot.hasData) {
+                              return const Center(child: Text('Failed to load PDF'));
+                            }
+                            return PdfViewer(
+                              PdfDocumentRefDirect(snapshot.data!),
                               controller: widget.controller,
-                              renderer: (page) {
-                                return page.render(
-                                  width: (page.width * quality).toDouble(),
-                                  height: (page.height * quality).toDouble(),
-                                  format: PdfPageImageFormat.png,
-                                  backgroundColor: '#FFFFFF',
-                                );
-                              },
+                              params: PdfViewerParams(
+                                layoutPages: (pages, params) {
+                                  // Tek sayfa dikey düzen - sayfalar ekran genişliğine sığacak şekilde
+                                  if (pages.isEmpty) {
+                                    return PdfPageLayout(
+                                      pageLayouts: [],
+                                      documentSize: Size.zero,
+                                    );
+                                  }
+
+                                  final margin = params.margin;
+
+                                  // Tüm sayfaların maksimum genişliğini bul
+                                  final maxWidth = pages.fold<double>(
+                                    0.0,
+                                    (prev, page) => prev > page.width ? prev : page.width,
+                                  );
+
+                                  final pageLayouts = <Rect>[];
+                                  double y = margin;
+
+                                  for (var page in pages) {
+                                    // Sayfayı genişliğe göre ölçekle
+                                    final pageHeight = page.height * maxWidth / page.width;
+                                    pageLayouts.add(
+                                      Rect.fromLTWH(margin, y, maxWidth, pageHeight),
+                                    );
+                                    y += pageHeight + margin;
+                                  }
+
+                                  return PdfPageLayout(
+                                    pageLayouts: pageLayouts,
+                                    documentSize: Size(maxWidth + margin * 2, y),
+                                  );
+                                },
+                                // Başlangıç zoom seviyesini ekran genişliğine göre ayarla
+                                calculateInitialZoom: (document, controller, fitZoom, coverZoom) {
+                                  // fitZoom kullan - sayfa ekran genişliğine sığar
+                                  return fitZoom;
+                                },
+                                // Hem dikey hem yatay kaydırma - zoom sonrası drag için gerekli
+                                panAxis: PanAxis.free,
+                                panEnabled: true,
+                                onViewerReady: (document, controller) {
+                                  // Viewer hazır olduğunda ilk sayfa bilgisini ayarla
+                                  if (mounted && controller.pageNumber != null) {
+                                    setState(() => _currentPage = controller.pageNumber!);
+                                  }
+                                },
+                                onPageChanged: (pageNumber) {
+                                  if (pageNumber != null && pageNumber != _currentPage && mounted) {
+                                    // Controller hazır olana kadar bekle
+                                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                                      if (mounted) {
+                                        setState(() => _currentPage = pageNumber);
+                                        _repaintNotifier.value++;
+                                        _updateUndoRedoState();
+                                        _timeTracker.onPageChanged(pageNumber);
+                                      }
+                                    });
+                                  }
+                                },
+                                backgroundColor: Colors.white,
+                              ),
                             );
                           },
                         ),
@@ -1953,7 +2023,7 @@ class _SwipeableImageDialog extends StatefulWidget {
   final int initialIndex;
   final CropData cropData;
   final List<CropItem> cropsForPage;
-  final PdfController pdfController;
+  final PdfViewerController pdfController;
   final ValueNotifier<ToolState> toolNotifier;
   final String? zipFilePath;
   final Uint8List? zipBytes; // Web platformu için

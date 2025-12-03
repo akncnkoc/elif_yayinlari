@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:pdfx/pdfx.dart';
+import 'package:pdfrx/pdfrx.dart';
+import '../../core/extensions/pdf_viewer_controller_extensions.dart';
 import '../pdf_thumbnail.dart';
 
 class ThumbnailPanel extends StatelessWidget {
-  final PdfController pdfController;
+  final PdfViewerController pdfController;
+  final Future<PdfDocument> pdfDocument;
   final int currentPage;
   final VoidCallback onClose;
 
   const ThumbnailPanel({
     super.key,
     required this.pdfController,
+    required this.pdfDocument,
     required this.currentPage,
     required this.onClose,
   });
@@ -46,6 +49,7 @@ class ThumbnailPanel extends StatelessWidget {
         // Thumbnail List
         PdfThumbnailList(
           pdfController: pdfController,
+          pdfDocument: pdfDocument,
           currentPage: currentPage,
           totalPages: pdfController.pagesCount ?? 0,
           onPageSelected: (pageNumber) {

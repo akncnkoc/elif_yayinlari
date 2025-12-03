@@ -1,7 +1,7 @@
 import 'package:akilli_tahta_proje_demo/viewer/drawing_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:icons_flutter/icons_flutter.dart';
-import 'package:pdfx/pdfx.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 import 'tool_state.dart';
 import '../services/user_preferences_service.dart';
@@ -11,7 +11,7 @@ import '../features/drawing/presentation/widgets/tool_panel/tool_panel_component
 import '../features/pdf_viewer/presentation/widgets/page_navigation_buttons.dart';
 
 class ToolPanel extends StatefulWidget {
-  final PdfController controller;
+  final PdfViewerController controller;
   final VoidCallback? onSolveProblem;
   final ValueNotifier<ToolState>? toolNotifier;
   final VoidCallback? onUndo;

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:pdfx/pdfx.dart';
+import 'package:pdfrx/pdfrx.dart';
+import '../../core/extensions/pdf_viewer_controller_extensions.dart';
 import '../page_time_tracker.dart';
 import '../time_display_widget.dart';
 
 class PdfViewerTopBar extends StatelessWidget {
   final String pdfPath;
-  final PdfController pdfController;
+  final PdfViewerController pdfController;
+  final int currentPage;
   final bool showThumbnails;
   final VoidCallback onToggleThumbnails;
   final double zoomLevel;
@@ -18,6 +20,7 @@ class PdfViewerTopBar extends StatelessWidget {
     super.key,
     required this.pdfPath,
     required this.pdfController,
+    required this.currentPage,
     required this.showThumbnails,
     required this.onToggleThumbnails,
     required this.zoomLevel,
@@ -62,57 +65,53 @@ class PdfViewerTopBar extends StatelessWidget {
           ),
 
           // Sayfa Bilgisi (Tıklanabilir - Thumbnail Toggle)
-          ValueListenableBuilder<int>(
-            valueListenable: pdfController.pageListenable,
-            builder: (context, currentPage, child) {
-              return InkWell(
-                onTap: onToggleThumbnails,
+          // pdfrx: Use currentPage from widget instead of pageListenable
+          InkWell(
+            onTap: onToggleThumbnails,
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 8,
+              ),
+              decoration: BoxDecoration(
+                color: showThumbnails
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(20),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    showThumbnails ? Icons.grid_view : Icons.description,
+                    size: 16,
                     color: showThumbnails
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(20),
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : Theme.of(context).colorScheme.primary,
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        showThumbnails ? Icons.grid_view : Icons.description,
-                        size: 16,
-                        color: showThumbnails
-                            ? Theme.of(context).colorScheme.onPrimary
-                            : Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Sayfa $currentPage / ${pdfController.pagesCount ?? 0}',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: showThumbnails
-                              ? Theme.of(context).colorScheme.onPrimary
-                              : Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        showThumbnails ? Icons.expand_more : Icons.chevron_right,
-                        size: 18,
-                        color: showThumbnails
-                            ? Theme.of(context).colorScheme.onPrimary
-                            : Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ],
+                  const SizedBox(width: 8),
+                  Text(
+                    'Sayfa $currentPage / ${pdfController.pagesCount ?? 0}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: showThumbnails
+                          ? Theme.of(context).colorScheme.onPrimary
+                          : Theme.of(context).colorScheme.onSurface,
+                    ),
                   ),
-                ),
-              );
-            },
+                  const SizedBox(width: 4),
+                  Icon(
+                    showThumbnails ? Icons.expand_more : Icons.chevron_right,
+                    size: 18,
+                    color: showThumbnails
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
           ),
 
           const SizedBox(width: 16),
@@ -193,7 +192,7 @@ class PdfViewerTopBar extends StatelessWidget {
                 context: context,
                 builder: (context) => TimeStatisticsDialog(
                   timeTracker: timeTracker,
-                  currentPage: pdfController.pageListenable.value,
+                  currentPage: currentPage,
                 ),
               );
             },

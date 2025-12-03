@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:pdfx/pdfx.dart';
+import 'package:pdfrx/pdfrx.dart';
+import '../core/extensions/pdf_viewer_controller_extensions.dart';
 import 'pdf_viewer_with_drawing.dart';
 import 'tool_panel.dart';
 import '../soru_cozucu_service.dart';
@@ -44,7 +45,8 @@ class PdfDrawingViewerPage extends StatefulWidget {
 }
 
 class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
-  late PdfController _pdfController;
+  late PdfViewerController _pdfController;
+  late Future<PdfDocument> _pdfDocument;
   final GlobalKey<PdfViewerWithDrawingState> _drawingKey = GlobalKey();
   final GlobalKey _canvasKey = GlobalKey();
 
@@ -69,12 +71,12 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
     // DrawingProvider'ı oluştur
     _drawingProvider = DrawingProvider();
 
-    // Controller'ı hemen initialize et
-    _pdfController = PdfController(
-      document: widget.pdfBytes != null
-          ? PdfDocument.openData(widget.pdfBytes!)
-          : PdfDocument.openFile(widget.pdfPath),
-    );
+    // pdfrx: Separate document loading from controller
+    _pdfController = PdfViewerController();
+    _pdfDocument = widget.pdfBytes != null
+        ? PdfDocument.openData(widget.pdfBytes!)
+        : PdfDocument.openFile(widget.pdfPath);
+
     _loadPdf();
     _checkServerHealth();
   }
@@ -82,7 +84,17 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
   Future<void> _loadPdf() async {
     try {
       // PDF yüklenene kadar bekle
-      await _pdfController.document;
+      await _pdfDocument;
+
+      // Controller'ın hazır olmasını bekle
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // Controller listener ekle
+      _pdfController.addListener(() {
+        if (mounted && _pdfController.isReady) {
+          setState(() {});
+        }
+      });
 
       if (mounted) {
         setState(() => _isPdfLoading = false);
@@ -97,7 +109,8 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
 
   @override
   void dispose() {
-    _pdfController.dispose();
+    // pdfrx: PdfViewerController doesn't need manual disposal
+    // _pdfController.dispose();
     _drawingProvider.dispose();
     super.dispose();
   }
@@ -402,6 +415,7 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                             return PdfViewerTopBar(
                               pdfPath: widget.pdfPath,
                               pdfController: _pdfController,
+                              currentPage: drawingProvider.currentPage,
                               showThumbnails: _showThumbnails,
                               onToggleThumbnails: _toggleThumbnails,
                               zoomLevel: drawingProvider.zoomLevel,
@@ -427,6 +441,7 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                         child: PdfViewerWithDrawing(
                           key: _drawingKey,
                           controller: _pdfController,
+                          documentRef: _pdfDocument,
                           cropData: widget.cropData,
                           zipFilePath: widget.zipFilePath,
                           zipBytes: widget.zipBytes,
@@ -475,19 +490,16 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                 ),
 
                 // ALT KISIM - PDF Thumbnail List
+                // pdfrx: Use provider's currentPage instead of pageListenable
                 if (_showThumbnails)
-                  ValueListenableBuilder<int>(
-                    valueListenable: _pdfController.pageListenable,
-                    builder: (context, currentPage, child) {
-                      return ThumbnailPanel(
-                        pdfController: _pdfController,
-                        currentPage: currentPage,
-                        onClose: () {
-                          setState(() {
-                            _showThumbnails = false;
-                          });
-                        },
-                      );
+                  ThumbnailPanel(
+                    pdfController: _pdfController,
+                    pdfDocument: _pdfDocument,
+                    currentPage: _drawingProvider.currentPage,
+                    onClose: () {
+                      setState(() {
+                        _showThumbnails = false;
+                      });
                     },
                   ),
               ],

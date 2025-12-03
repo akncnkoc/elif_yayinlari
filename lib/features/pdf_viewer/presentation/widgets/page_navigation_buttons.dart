@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:pdfx/pdfx.dart';
+import 'package:pdfrx/pdfrx.dart';
+import '../../../../core/extensions/pdf_viewer_controller_extensions.dart';
 
 /// Page navigation buttons component
 class PageNavigationButtons extends StatelessWidget {
-  final PdfController controller;
+  final PdfViewerController controller;
   final bool isCompact;
 
   const PageNavigationButtons({
@@ -22,7 +23,7 @@ class PageNavigationButtons extends StatelessWidget {
 }
 
 class _FullNavigation extends StatelessWidget {
-  final PdfController controller;
+  final PdfViewerController controller;
 
   const _FullNavigation({required this.controller});
 
@@ -78,7 +79,7 @@ class _FullNavigation extends StatelessWidget {
 }
 
 class _CompactNavigation extends StatelessWidget {
-  final PdfController controller;
+  final PdfViewerController controller;
 
   const _CompactNavigation({required this.controller});
 

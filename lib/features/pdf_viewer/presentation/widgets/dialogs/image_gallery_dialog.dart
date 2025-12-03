@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:pdfx/pdfx.dart';
+import 'package:pdfrx/pdfrx.dart';
 import '../../../../../models/crop_data.dart';
 
 class ImageGalleryDialog extends StatefulWidget {
@@ -8,7 +8,7 @@ class ImageGalleryDialog extends StatefulWidget {
   final int initialIndex;
   final CropData cropData;
   final List<CropItem> cropsForPage;
-  final PdfController pdfController;
+  final PdfViewerController pdfController;
 
   const ImageGalleryDialog({
     super.key,
