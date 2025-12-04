@@ -10,6 +10,8 @@ import 'package:archive/archive.dart';
 import 'package:path_provider/path_provider.dart';
 import './dropbox/dropbox_service.dart';
 import './dropbox/models.dart';
+import './google_drive/google_drive_service.dart';
+import './google_drive/models.dart' as gdrive;
 import './models/crop_data.dart';
 import 'login_page.dart';
 import 'viewer/pdf_drawing_viewer_page.dart';
@@ -24,18 +26,29 @@ class FolderHomePage extends StatefulWidget {
 
 class _FolderHomePageState extends State<FolderHomePage> {
   DropboxService? dropboxService;
+  GoogleDriveService? googleDriveService;
   List<DropboxItem> folders = [];
   List<DropboxItem> pdfs = [];
+  List<gdrive.DriveItem> driveItems =
+      []; // folders + .book files (changed from driveBooks)
+  String? currentDriveFolderId; // current Drive folder (null = root)
   List<OpenPdfTab> openTabs = [];
   int currentTabIndex = 0;
   bool isLoading = false;
   bool isFullScreen = false;
   bool showFolderBrowser = false;
   bool useDropbox = false;
+  bool useGoogleDrive = false;
   bool showStorageSelection = true;
 
   List<BreadcrumbItem> breadcrumbs = [
     BreadcrumbItem(name: 'Akilli Tahta Proje Demo', path: ''),
+  ];
+  List<BreadcrumbItem> driveBreadcrumbs = [
+    BreadcrumbItem(
+      name: 'Ana Klasör',
+      path: '1U8mbCEY2JzdDngZxL7RyxID5eh8MW2yR',
+    ), // main folder
   ];
 
   @override
@@ -50,8 +63,33 @@ class _FolderHomePageState extends State<FolderHomePage> {
     setState(() {
       showStorageSelection = false;
       useDropbox = false;
+      useGoogleDrive = false;
       // Local files will be picked by user on-demand
     });
+  }
+
+  Future<void> _selectGoogleDriveStorage() async {
+    setState(() => isLoading = true);
+
+    try {
+      googleDriveService = GoogleDriveService();
+      // Initialize service (which will load service account credentials)
+      await googleDriveService!.initialize();
+
+      // Load root folder after successful initialization
+      const rootFolderId =
+          "1U8mbCEY2JzdDngZxL7RyxID5eh8MW2yR"; // Main folder ID
+      await _loadGoogleDriveFolder(rootFolderId);
+      setState(() {
+        showStorageSelection = false;
+        useGoogleDrive = true;
+        useDropbox = false;
+        isLoading = false;
+      });
+    } catch (e) {
+      setState(() => isLoading = false);
+      _showError('Google Drive authentication error: $e');
+    }
   }
 
   Future<void> _makeFullscreen() async {
@@ -85,6 +123,46 @@ class _FolderHomePageState extends State<FolderHomePage> {
     } catch (e) {
       setState(() => isLoading = false);
       _showError('Failed to load folder: $e');
+    }
+  }
+
+  Future<void> _loadGoogleDriveFolder(String? folderId) async {
+    if (googleDriveService == null) return;
+
+    setState(() => isLoading = true);
+
+    try {
+      final items = await googleDriveService!.listFiles(folderId: folderId);
+
+      setState(() {
+        driveItems = items; // folders + .book files
+        currentDriveFolderId = folderId;
+        isLoading = false;
+      });
+
+      if (items.isEmpty) {
+        _showError('This folder is empty');
+      }
+    } catch (e) {
+      setState(() => isLoading = false);
+      _showError('Failed to load Google Drive folder: $e');
+    }
+  }
+
+  void _navigateToDriveFolder(String folderId, String folderName) {
+    setState(() {
+      driveBreadcrumbs.add(BreadcrumbItem(name: folderName, path: folderId));
+    });
+    _loadGoogleDriveFolder(folderId);
+  }
+
+  void _navigateToDriveBreadcrumb(int index) {
+    if (index < driveBreadcrumbs.length - 1) {
+      setState(() {
+        driveBreadcrumbs = driveBreadcrumbs.sublist(0, index + 1);
+      });
+      final folderId = driveBreadcrumbs[index].path;
+      _loadGoogleDriveFolder(folderId);
     }
   }
 
@@ -373,6 +451,48 @@ class _FolderHomePageState extends State<FolderHomePage> {
     }
   }
 
+  Future<void> _openBookFromGoogleDrive(gdrive.DriveItem book) async {
+    if (googleDriveService == null) return;
+
+    // Check if already open
+    final existingIndex = openTabs.indexWhere(
+      (tab) => tab.dropboxPath == 'gdrive:${book.id}',
+    );
+    if (existingIndex != -1) {
+      setState(() {
+        currentTabIndex = existingIndex;
+        showFolderBrowser = false;
+      });
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      if (kIsWeb) {
+        // Web: Download as bytes
+        final bytes = await googleDriveService!.downloadFileBytes(book.id);
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        await _handleZipFileFromBytes(bytes, book.name);
+      } else {
+        // Desktop/Mobile: Download to file
+        final file = await googleDriveService!.downloadFile(book.id, book.name);
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        await _handleZipFile(file.path, book.name);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      _showError('Failed to open book from Google Drive: $e');
+    }
+  }
+
   void closeTab(int index) {
     setState(() {
       if (openTabs.length > index) {
@@ -456,6 +576,94 @@ class _FolderHomePageState extends State<FolderHomePage> {
                       ),
                     ),
                     if (i < breadcrumbs.length - 1)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Icon(
+                          Icons.chevron_right_rounded,
+                          size: 18,
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
+                        ),
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDriveBreadcrumbs() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        border: Border(
+          bottom: BorderSide(
+            color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Theme.of(
+                context,
+              ).colorScheme.secondary.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              Icons.cloud_rounded,
+              size: 20,
+              color: Theme.of(context).colorScheme.secondary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (int i = 0; i < driveBreadcrumbs.length; i++) ...[
+                    InkWell(
+                      onTap: () => _navigateToDriveBreadcrumb(i),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: i == driveBreadcrumbs.length - 1
+                            ? BoxDecoration(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.secondary.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(8),
+                              )
+                            : null,
+                        child: Text(
+                          driveBreadcrumbs[i].name,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: i == driveBreadcrumbs.length - 1
+                                ? FontWeight.w600
+                                : FontWeight.w500,
+                            color: i == driveBreadcrumbs.length - 1
+                                ? Theme.of(context).colorScheme.onSurface
+                                : Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (i < driveBreadcrumbs.length - 1)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: Icon(
@@ -619,7 +827,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (!useDropbox) {
+    if (!useDropbox && !useGoogleDrive) {
       // For local mode, show empty state with "open file" button
       return Center(
         child: Padding(
@@ -636,12 +844,12 @@ class _FolderHomePageState extends State<FolderHomePage> {
               ),
               const SizedBox(height: 16),
               const Text(
-                'PDF dosyası açın',
+                'Kitap dosyası açın',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 8),
               const Text(
-                'Bir PDF dosyası seçmek için + butonuna tıklayın',
+                'Bir .book dosyası seçmek için + butonuna tıklayın',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
@@ -654,6 +862,195 @@ class _FolderHomePageState extends State<FolderHomePage> {
             ],
           ),
         ),
+      );
+    }
+
+    // Google Drive mode
+    if (useGoogleDrive) {
+      if (driveItems.isEmpty) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.folder_off, size: 64, color: Colors.grey),
+                const SizedBox(height: 16),
+                const Text(
+                  'Bu klasör boş',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Klasör veya .book dosyası bulunamadı',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () => _loadGoogleDriveFolder(currentDriveFolderId),
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Yenile'),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+
+      // Show Google Drive items (folders + books) in premium grid
+      return GridView.builder(
+        padding: const EdgeInsets.all(16),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 6,
+          childAspectRatio: 0.85,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+        ),
+        itemCount: driveItems.length,
+        itemBuilder: (context, index) {
+          final item = driveItems[index];
+          final isFolder = item.isFolder;
+
+          return MouseRegion(
+            cursor: SystemMouseCursors.click,
+            child: GestureDetector(
+              onTap: () {
+                if (isFolder) {
+                  _navigateToDriveFolder(item.id, item.name);
+                } else {
+                  _openBookFromGoogleDrive(item);
+                }
+              },
+              child: Card(
+                elevation: 2,
+                shadowColor: isFolder
+                    ? Theme.of(
+                        context,
+                      ).colorScheme.tertiary.withValues(alpha: 0.15)
+                    : Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.15),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    gradient: LinearGradient(
+                      colors: [
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                        Theme.of(context).colorScheme.surface,
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      // Icon container with gradient
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: isFolder
+                                  ? [
+                                      Theme.of(context).colorScheme.tertiary
+                                          .withValues(alpha: 0.1),
+                                      Theme.of(context).colorScheme.tertiary
+                                          .withValues(alpha: 0.05),
+                                    ]
+                                  : [
+                                      Theme.of(context).colorScheme.primary
+                                          .withValues(alpha: 0.1),
+                                      Theme.of(context).colorScheme.secondary
+                                          .withValues(alpha: 0.05),
+                                    ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(14),
+                              topRight: Radius.circular(14),
+                            ),
+                          ),
+                          child: Stack(
+                            children: [
+                              // Main icon (folder or book)
+                              Center(
+                                child: Icon(
+                                  isFolder
+                                      ? Icons.folder_rounded
+                                      : Icons.menu_book_rounded,
+                                  size: 40,
+                                  color: isFolder
+                                      ? Theme.of(context).colorScheme.tertiary
+                                      : Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                              // Small badge
+                              if (!isFolder)
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.secondary,
+                                      shape: BoxShape.circle,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .secondary
+                                              .withValues(alpha: 0.3),
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: const Icon(
+                                      Icons.cloud_rounded,
+                                      size: 12,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Item name
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        width: double.infinity,
+                        child: Text(
+                          item.name,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.onSurface,
+                            letterSpacing: -0.2,
+                            height: 1.2,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 2,
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       );
     }
 
@@ -813,154 +1210,207 @@ class _FolderHomePageState extends State<FolderHomePage> {
   Widget _buildStorageSelectionScreen() {
     return Center(
       child: Container(
-        constraints: const BoxConstraints(maxWidth: 500),
-        padding: const EdgeInsets.all(32),
+        constraints: const BoxConstraints(maxWidth: 450),
+        padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.folder_open,
-              size: 80,
-              color: Theme.of(context).colorScheme.primary,
+            // Premium header icon with gradient
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Theme.of(context).colorScheme.primary,
+                    Theme.of(context).colorScheme.secondary,
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.3),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.folder_open_rounded,
+                size: 48,
+                color: Colors.white,
+              ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             Text(
               'Dosya Kaynağı Seçin',
               style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w700,
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
                 color: Theme.of(context).colorScheme.onSurface,
+                letterSpacing: -0.5,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(
               'PDF dosyalarınızı nereden açmak istersiniz?',
               textAlign: TextAlign.center,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
+                letterSpacing: -0.2,
               ),
             ),
-            const SizedBox(height: 48),
-            Card(
-              child: InkWell(
-                onTap: _selectLocalStorage,
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  padding: const EdgeInsets.all(24),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.primary.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Icon(
-                          Icons.computer,
-                          size: 32,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Yerel Dosyalar',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w700,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Bilgisayarınızdan PDF dosyası seçin',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Icon(
-                        Icons.arrow_forward_ios,
-                        size: 20,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ],
-                  ),
+            const SizedBox(height: 32),
+
+            // Local Storage Card - Premium
+            _buildPremiumStorageCard(
+              icon: Icons.computer_rounded,
+              title: 'Yerel Dosyalar',
+              subtitle: 'Bilgisayarınızdan dosya seçin',
+              gradientColors: [
+                Theme.of(context).colorScheme.primary,
+                Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
+              ],
+              onTap: _selectLocalStorage,
+            ),
+
+            const SizedBox(height: 12),
+
+            // Google Drive Card - Premium
+            _buildPremiumStorageCard(
+              icon: Icons.cloud_rounded,
+              title: 'Google Drive',
+              subtitle: '.book dosyalarını görüntüle',
+              gradientColors: [
+                Theme.of(context).colorScheme.secondary,
+                Theme.of(context).colorScheme.tertiary,
+              ],
+              onTap: isLoading ? null : _selectGoogleDriveStorage,
+            ),
+
+            if (isLoading) ...[
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 3,
+                child: LinearProgressIndicator(
+                  backgroundColor: Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest,
                 ),
               ),
-            ),
-            // const SizedBox(height: 16),
-            // Card(
-            //   child: InkWell(
-            //     onTap: _selectDropboxStorage,
-            //     borderRadius: BorderRadius.circular(16),
-            //     child: Container(
-            //       padding: const EdgeInsets.all(24),
-            //       child: Row(
-            //         children: [
-            //           Container(
-            //             padding: const EdgeInsets.all(16),
-            //             decoration: BoxDecoration(
-            //               color: Theme.of(context)
-            //                   .colorScheme
-            //                   .secondary
-            //                   .withValues(alpha: 0.1),
-            //               borderRadius: BorderRadius.circular(12),
-            //             ),
-            //             child: Icon(
-            //               Icons.cloud,
-            //               size: 32,
-            //               color: Theme.of(context).colorScheme.secondary,
-            //             ),
-            //           ),
-            //           const SizedBox(width: 20),
-            //           Expanded(
-            //             child: Column(
-            //               crossAxisAlignment: CrossAxisAlignment.start,
-            //               children: [
-            //                 Text(
-            //                   'Dropbox',
-            //                   style: TextStyle(
-            //                     fontSize: 18,
-            //                     fontWeight: FontWeight.w700,
-            //                     color: Theme.of(context).colorScheme.onSurface,
-            //                   ),
-            //                 ),
-            //                 const SizedBox(height: 4),
-            //                 Text(
-            //                   'Dropbox hesabınızdan dosya açın',
-            //                   style: TextStyle(
-            //                     fontSize: 14,
-            //                     color: Theme.of(context)
-            //                         .colorScheme
-            //                         .onSurfaceVariant,
-            //                   ),
-            //                 ),
-            //               ],
-            //             ),
-            //           ),
-            //           Icon(
-            //             Icons.arrow_forward_ios,
-            //             size: 20,
-            //             color: Theme.of(context).colorScheme.onSurfaceVariant,
-            //           ),
-            //         ],
-            //       ),
-            //     ),
-            //   ),
-            // ),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPremiumStorageCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required List<Color> gradientColors,
+    required VoidCallback? onTap,
+  }) {
+    return MouseRegion(
+      cursor: onTap != null
+          ? SystemMouseCursors.click
+          : SystemMouseCursors.basic,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        child: Card(
+          elevation: 2,
+          shadowColor: gradientColors[0].withValues(alpha: 0.2),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: LinearGradient(
+                  colors: [
+                    gradientColors[0].withValues(alpha: 0.05),
+                    gradientColors[1].withValues(alpha: 0.02),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+              child: Row(
+                children: [
+                  // Icon container with gradient
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: gradientColors,
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: gradientColors[0].withValues(alpha: 0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Icon(icon, size: 28, color: Colors.white),
+                  ),
+                  const SizedBox(width: 16),
+
+                  // Text content
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: Theme.of(context).colorScheme.onSurface,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Arrow icon
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 18,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1046,8 +1496,10 @@ class _FolderHomePageState extends State<FolderHomePage> {
         body: Column(
           children: [
             if (openTabs.isNotEmpty) _buildTabBar(),
-            if ((openTabs.isEmpty || showFolderBrowser) && !isLoading)
-              _buildBreadcrumbs(),
+            if ((openTabs.isEmpty || showFolderBrowser) &&
+                !isLoading &&
+                (useDropbox || useGoogleDrive))
+              useGoogleDrive ? _buildDriveBreadcrumbs() : _buildBreadcrumbs(),
             Expanded(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 200),
