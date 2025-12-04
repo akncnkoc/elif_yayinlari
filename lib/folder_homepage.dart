@@ -70,15 +70,8 @@ class _FolderHomePageState extends State<FolderHomePage> {
     try {
       final items = await dropboxService!.listFolder(path);
 
-      print('=== FOLDER CONTENTS: $path ===');
-      print('Total items found: ${items.length}');
-
       final foldersList = items.where((item) => item.isFolder).toList();
       final pdfsList = items.where((item) => item.isPdf).toList();
-
-      print('Total folders: ${foldersList.length}');
-      print('Total PDFs: ${pdfsList.length}');
-      print('=== END ===');
 
       setState(() {
         folders = foldersList;
@@ -92,7 +85,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
     } catch (e) {
       setState(() => isLoading = false);
       _showError('Failed to load folder: $e');
-      print('❌ Error loading folder: $e');
     }
   }
 
@@ -131,11 +123,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
           // It's a PDF file
           setState(() {
             openTabs.add(
-              OpenPdfTab(
-                pdfPath: filePath,
-                title: fileName,
-                dropboxPath: null,
-              ),
+              OpenPdfTab(pdfPath: filePath, title: 'Kitap', dropboxPath: null),
             );
             currentTabIndex = openTabs.length - 1;
             showFolderBrowser = false;
@@ -148,7 +136,10 @@ class _FolderHomePageState extends State<FolderHomePage> {
   }
 
   // Web platformu için bytes kullanarak zip işleme
-  Future<void> _handleZipFileFromBytes(Uint8List bytes, String zipFileName) async {
+  Future<void> _handleZipFileFromBytes(
+    Uint8List bytes,
+    String zipFileName,
+  ) async {
     try {
       // Show loading indicator
       showDialog(
@@ -160,14 +151,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
       // Decode the book file (zip format)
       final archive = ZipDecoder().decodeBytes(bytes);
 
-      print('📚 BOOK file opened: $zipFileName');
-      print('📚 Total files in archive: ${archive.length}');
-
-      // List all files in the archive
-      for (final file in archive) {
-        print('   - ${file.name} (${file.isFile ? "file" : "dir"})');
-      }
-
       // Look for original.pdf and crop_coordinates.json in the archive
       ArchiveFile? originalPdf;
       ArchiveFile? cropCoordinatesJson;
@@ -175,10 +158,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
       for (final file in archive) {
         if (file.isFile && file.name.toLowerCase() == 'original.pdf') {
           originalPdf = file;
-          print('✅ Found original.pdf');
-        } else if (file.isFile && file.name.toLowerCase() == 'crop_coordinates.json') {
+        } else if (file.isFile &&
+            file.name.toLowerCase() == 'crop_coordinates.json') {
           cropCoordinatesJson = file;
-          print('✅ Found crop_coordinates.json');
         }
       }
 
@@ -196,16 +178,12 @@ class _FolderHomePageState extends State<FolderHomePage> {
       CropData? cropData;
       if (cropCoordinatesJson != null) {
         try {
-          final jsonString = utf8.decode(cropCoordinatesJson.content as List<int>);
-          print('📄 JSON content (first 500 chars): ${jsonString.substring(0, jsonString.length > 500 ? 500 : jsonString.length)}');
+          final jsonString = utf8.decode(
+            cropCoordinatesJson.content as List<int>,
+          );
           cropData = CropData.fromJsonString(jsonString);
-          print('✅ Crop data loaded: ${cropData.totalDetected} objects detected');
-          print('✅ PDF file referenced: ${cropData.pdfFile}');
-          print('✅ Total pages: ${cropData.totalPages}');
-          print('✅ Total objects: ${cropData.objects.length}');
-        } catch (e, stackTrace) {
+        } catch (e) {
           print('⚠️ Failed to parse crop_coordinates.json: $e');
-          print('Stack trace: $stackTrace');
         }
       } else {
         print('⚠️ No crop_coordinates.json found in ZIP');
@@ -219,8 +197,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
       setState(() {
         openTabs.add(
           OpenPdfTab(
-            pdfPath: 'web_${DateTime.now().millisecondsSinceEpoch}.pdf', // Placeholder
-            title: 'original.pdf (from $zipFileName)',
+            pdfPath:
+                'web_${DateTime.now().millisecondsSinceEpoch}.pdf', // Placeholder
+            title: 'Kitap',
             dropboxPath: null,
             cropData: cropData,
             zipFilePath: null, // Web'de zip path yok
@@ -251,14 +230,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
       final bytes = await File(zipPath).readAsBytes();
       final archive = ZipDecoder().decodeBytes(bytes);
 
-      print('📚 BOOK file opened: $zipFileName');
-      print('📚 Total files in archive: ${archive.length}');
-
-      // List all files in the archive
-      for (final file in archive) {
-        print('   - ${file.name} (${file.isFile ? "file" : "dir"})');
-      }
-
       // Look for original.pdf and crop_coordinates.json in the archive
       ArchiveFile? originalPdf;
       ArchiveFile? cropCoordinatesJson;
@@ -266,10 +237,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
       for (final file in archive) {
         if (file.isFile && file.name.toLowerCase() == 'original.pdf') {
           originalPdf = file;
-          print('✅ Found original.pdf');
-        } else if (file.isFile && file.name.toLowerCase() == 'crop_coordinates.json') {
+        } else if (file.isFile &&
+            file.name.toLowerCase() == 'crop_coordinates.json') {
           cropCoordinatesJson = file;
-          print('✅ Found crop_coordinates.json');
         }
       }
 
@@ -282,7 +252,8 @@ class _FolderHomePageState extends State<FolderHomePage> {
 
       // Extract the PDF to a temporary location
       final tempDir = await getTemporaryDirectory();
-      final pdfPath = '${tempDir.path}/original_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final pdfPath =
+          '${tempDir.path}/original_${DateTime.now().millisecondsSinceEpoch}.pdf';
       final pdfFile = File(pdfPath);
       await pdfFile.writeAsBytes(originalPdf.content as List<int>);
 
@@ -290,19 +261,16 @@ class _FolderHomePageState extends State<FolderHomePage> {
       CropData? cropData;
       if (cropCoordinatesJson != null) {
         try {
-          final jsonString = utf8.decode(cropCoordinatesJson.content as List<int>);
-          print('📄 JSON content (first 500 chars): ${jsonString.substring(0, jsonString.length > 500 ? 500 : jsonString.length)}');
+          final jsonString = utf8.decode(
+            cropCoordinatesJson.content as List<int>,
+          );
           cropData = CropData.fromJsonString(jsonString);
-          print('✅ Crop data loaded: ${cropData.totalDetected} objects detected');
-          print('✅ PDF file referenced: ${cropData.pdfFile}');
-          print('✅ Total pages: ${cropData.totalPages}');
-          print('✅ Total objects: ${cropData.objects.length}');
         } catch (e, stackTrace) {
-          print('⚠️ Failed to parse crop_coordinates.json: $e');
+          print('e: $e');
           print('Stack trace: $stackTrace');
         }
       } else {
-        print('⚠️ No crop_coordinates.json found in ZIP');
+        return;
       }
 
       if (!mounted) return;
@@ -313,7 +281,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
         openTabs.add(
           OpenPdfTab(
             pdfPath: pdfPath,
-            title: 'original.pdf (from $zipFileName)',
+            title: 'Kitap',
             dropboxPath: null,
             cropData: cropData,
             zipFilePath: zipPath, // Zip dosyasının yolunu sakla
@@ -393,11 +361,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
 
       setState(() {
         openTabs.add(
-          OpenPdfTab(
-            pdfPath: file.path,
-            title: pdf.name,
-            dropboxPath: pdf.path,
-          ),
+          OpenPdfTab(pdfPath: file.path, title: 'Kitap', dropboxPath: pdf.path),
         );
         currentTabIndex = openTabs.length - 1;
         showFolderBrowser = false;
@@ -666,7 +630,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
               Icon(
                 Icons.picture_as_pdf,
                 size: 64,
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+                color: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.5),
               ),
               const SizedBox(height: 16),
               const Text(
@@ -887,10 +853,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withValues(alpha: 0.1),
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.primary.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
@@ -917,9 +882,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
                               'Bilgisayarınızdan PDF dosyası seçin',
                               style: TextStyle(
                                 fontSize: 14,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
                               ),
                             ),
                           ],

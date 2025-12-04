@@ -38,10 +38,7 @@ class PdfViewerTopBar extends StatelessWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor,
-            width: 1,
-          ),
+          bottom: BorderSide(color: Theme.of(context).dividerColor, width: 1),
         ),
       ),
       child: Row(
@@ -53,16 +50,7 @@ class PdfViewerTopBar extends StatelessWidget {
             size: 24,
           ),
           const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              pdfPath.split('/').last,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+          Spacer(flex: 1),
 
           // Sayfa Bilgisi (Tıklanabilir - Thumbnail Toggle)
           // pdfrx: Use currentPage from widget instead of pageListenable
@@ -70,10 +58,7 @@ class PdfViewerTopBar extends StatelessWidget {
             onTap: onToggleThumbnails,
             borderRadius: BorderRadius.circular(20),
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               decoration: BoxDecoration(
                 color: showThumbnails
                     ? Theme.of(context).colorScheme.primary
@@ -129,7 +114,9 @@ class PdfViewerTopBar extends StatelessWidget {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Row(
@@ -159,10 +146,7 @@ class PdfViewerTopBar extends StatelessWidget {
 
           // Zoom Seviyesi
           Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 8,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
               borderRadius: BorderRadius.circular(20),
@@ -185,7 +169,6 @@ class PdfViewerTopBar extends StatelessWidget {
 
           const SizedBox(width: 16),
 
-          // Zaman Göstergesi
           InkWell(
             onTap: () {
               showDialog(
@@ -198,10 +181,7 @@ class PdfViewerTopBar extends StatelessWidget {
             },
             borderRadius: BorderRadius.circular(20),
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(20),
@@ -220,9 +200,7 @@ class PdfViewerTopBar extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      fontFeatures: [
-                        FontFeature.tabularFigures(),
-                      ],
+                      fontFeatures: [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],

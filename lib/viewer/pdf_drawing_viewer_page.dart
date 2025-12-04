@@ -8,6 +8,7 @@ import '../soru_cozucu_service.dart';
 import 'calculator_widget.dart';
 import 'scratchpad_widget.dart';
 import '../models/crop_data.dart';
+import 'page_time_tracker.dart';
 
 // Components
 import 'components/pdf_viewer_top_bar.dart';
@@ -401,11 +402,31 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                 // ÜST BAR
                 Consumer<DrawingProvider>(
                   builder: (context, drawingProvider, child) {
-                    final state = _drawingKey.currentState;
-                    if (state == null) {
-                      // Handle null state case if necessary
-                      return const SizedBox.shrink(); // or a placeholder
+                    // Don't show top bar if PDF is still loading
+                    if (_isPdfLoading) {
+                      return const SizedBox.shrink();
                     }
+
+                    final state = _drawingKey.currentState;
+
+                    // If state is null, show a simple top bar without time tracking
+                    if (state == null) {
+                      return PdfViewerTopBar(
+                        pdfPath: widget.pdfPath,
+                        pdfController: _pdfController,
+                        currentPage: drawingProvider.currentPage,
+                        showThumbnails: _showThumbnails,
+                        onToggleThumbnails: _toggleThumbnails,
+                        zoomLevel: drawingProvider.zoomLevel,
+                        timeTracker: PageTimeTracker(
+                          onUpdate: () {},
+                        ), // Dummy tracker
+                        currentPageTime: '0sn',
+                        onBack: widget.onBack,
+                        onGoToPage: _showGoToPageDialog,
+                      );
+                    }
+
                     return ValueListenableBuilder<String>(
                       valueListenable: state.currentPageTimeNotifier,
                       builder: (context, pageTime, _) {
@@ -453,8 +474,10 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                         controller: _pdfController,
                         onSolveProblem: _serverHealthy ? _solveProblem : null,
                         toolNotifier: _drawingKey.currentState?.toolNotifier,
-                        canUndoNotifier: _drawingKey.currentState?.canUndoNotifier,
-                        canRedoNotifier: _drawingKey.currentState?.canRedoNotifier,
+                        canUndoNotifier:
+                            _drawingKey.currentState?.canUndoNotifier,
+                        canRedoNotifier:
+                            _drawingKey.currentState?.canRedoNotifier,
                         onUndo: () => _drawingKey.currentState?.undo(),
                         onRedo: () => _drawingKey.currentState?.redo(),
                         onClear: () =>

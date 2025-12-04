@@ -52,7 +52,8 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
 
   // Optimize: Batch repaint updates
   int _pointsSinceLastRepaint = 0;
-  static const int _repaintBatchSize = 3; // Repaint every 3 points instead of every point
+  static const int _repaintBatchSize =
+      3; // Repaint every 3 points instead of every point
   final ValueNotifier<ToolState> toolNotifier = ValueNotifier<ToolState>(
     ToolState(
       mouse: true,
@@ -187,7 +188,8 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
 
   void _onPageChanged() {
     // pdfrx: Check if page number has changed
-    if (!widget.controller.isReady || widget.controller.pageNumber == null) return;
+    if (!widget.controller.isReady || widget.controller.pageNumber == null)
+      return;
 
     final page = widget.controller.pageNumber!;
     if (page != _currentPage) {
@@ -621,7 +623,10 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
           erase: true,
         );
         _activeStroke!.points.add(transformedPosition);
-        _eraseAt(transformedPosition, tool.width * 15); // Daha büyük silgi alanı
+        _eraseAt(
+          transformedPosition,
+          tool.width * 15,
+        ); // Daha büyük silgi alanı
         print("🧹 Eraser stroke started");
         return;
       }
@@ -697,7 +702,8 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
         final List<List<Offset>> segments = [];
 
         // Optimize: Use squared distance to avoid expensive sqrt()
-        final eraserRadiusSq = eraserRadius * eraserRadius * 0.64; // 0.8^2 = 0.64
+        final eraserRadiusSq =
+            eraserRadius * eraserRadius * 0.64; // 0.8^2 = 0.64
 
         for (int i = 0; i < shapePoints.length; i++) {
           final point = shapePoints[i];
@@ -1459,180 +1465,172 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
         final cropRefHeight = cropReferenceSize.height;
 
         return LayoutBuilder(
-              builder: (context, constraints) {
-                final renderedWidth = constraints.maxWidth;
-                final renderedHeight = constraints.maxHeight;
+          builder: (context, constraints) {
+            final renderedWidth = constraints.maxWidth;
+            final renderedHeight = constraints.maxHeight;
 
-                if (pdfWidth == 0 ||
-                    pdfHeight == 0 ||
-                    renderedWidth == 0 ||
-                    renderedHeight == 0) {
-                  return const SizedBox.shrink();
-                }
+            if (pdfWidth == 0 ||
+                pdfHeight == 0 ||
+                renderedWidth == 0 ||
+                renderedHeight == 0) {
+              return const SizedBox.shrink();
+            }
 
-                if (cropRefWidth == 0 || cropRefHeight == 0) {
-                  return const SizedBox.shrink();
-                }
+            if (cropRefWidth == 0 || cropRefHeight == 0) {
+              return const SizedBox.shrink();
+            }
 
-                final pdfAspectRatio = pdfWidth / pdfHeight;
-                final containerAspectRatio = renderedWidth / renderedHeight;
+            final pdfAspectRatio = pdfWidth / pdfHeight;
+            final containerAspectRatio = renderedWidth / renderedHeight;
 
-                double actualPdfWidth;
-                double actualPdfHeight;
-                double offsetX = 0;
-                double offsetY = 0;
+            double actualPdfWidth;
+            double actualPdfHeight;
+            double offsetX = 0;
+            double offsetY = 0;
 
-                if (containerAspectRatio > pdfAspectRatio) {
-                  actualPdfHeight = renderedHeight;
-                  actualPdfWidth = actualPdfHeight * pdfAspectRatio;
-                  offsetX = (renderedWidth - actualPdfWidth) / 2;
-                } else {
-                  actualPdfWidth = renderedWidth;
-                  actualPdfHeight = actualPdfWidth / pdfAspectRatio;
-                  offsetY = (renderedHeight - actualPdfHeight) / 2;
-                }
+            if (containerAspectRatio > pdfAspectRatio) {
+              actualPdfHeight = renderedHeight;
+              actualPdfWidth = actualPdfHeight * pdfAspectRatio;
+              offsetX = (renderedWidth - actualPdfWidth) / 2;
+            } else {
+              actualPdfWidth = renderedWidth;
+              actualPdfHeight = actualPdfWidth / pdfAspectRatio;
+              offsetY = (renderedHeight - actualPdfHeight) / 2;
+            }
 
-                return ClipRect(
-                  child: Stack(
-                    clipBehavior: Clip.hardEdge,
-                    children: cropsForPage.map((crop) {
-                      // Yeni JSON ile referans: page_dimensions -> getReferenceSizeForPage
-                      // Top-left kökenli koordinat varsayımı (sayfa görüntüsü koordinatları)
-                      final scaleX = actualPdfWidth / cropRefWidth;
-                      final scaleY = actualPdfHeight / cropRefHeight;
+            return ClipRect(
+              child: Stack(
+                clipBehavior: Clip.hardEdge,
+                children: cropsForPage.map((crop) {
+                  // Yeni JSON ile referans: page_dimensions -> getReferenceSizeForPage
+                  // Top-left kökenli koordinat varsayımı (sayfa görüntüsü koordinatları)
+                  final scaleX = actualPdfWidth / cropRefWidth;
+                  final scaleY = actualPdfHeight / cropRefHeight;
 
-                      final cropScreenX =
-                          crop.coordinates.x1 * scaleX + offsetX;
-                      final cropScreenY =
-                          crop.coordinates.y1 * scaleY + offsetY;
+                  final cropScreenX = crop.coordinates.x1 * scaleX + offsetX;
+                  final cropScreenY = crop.coordinates.y1 * scaleY + offsetY;
 
-                      const buttonSize = 30.0;
-                      final buttonLeft = cropScreenX - buttonSize / 2;
-                      final buttonTop = cropScreenY - buttonSize / 2;
+                  const buttonSize = 30.0;
+                  final buttonLeft = cropScreenX - buttonSize / 2;
+                  final buttonTop = cropScreenY - buttonSize / 2;
 
-                      if (buttonLeft < offsetX - buttonSize ||
-                          buttonLeft > offsetX + actualPdfWidth ||
-                          buttonTop < offsetY - buttonSize ||
-                          buttonTop > offsetY + actualPdfHeight) {
-                        return const SizedBox.shrink();
-                      }
+                  if (buttonLeft < offsetX - buttonSize ||
+                      buttonLeft > offsetX + actualPdfWidth ||
+                      buttonTop < offsetY - buttonSize ||
+                      buttonTop > offsetY + actualPdfHeight) {
+                    return const SizedBox.shrink();
+                  }
 
-                      // Check if there's any actual solution data
-                      final hasAnswerChoice =
-                          (crop.solutionMetadata?.answerChoice != null ||
-                          crop.userSolution?.answerChoice != null);
-                      final hasExplanation =
-                          (crop.solutionMetadata?.explanation != null &&
-                              crop.solutionMetadata!.explanation!
-                                  .trim()
-                                  .isNotEmpty) ||
-                          (crop.userSolution?.explanation != null &&
-                              crop.userSolution!.explanation!
-                                  .trim()
-                                  .isNotEmpty);
-                      final hasDrawing =
-                          (crop.solutionMetadata?.drawingFile != null &&
-                              crop.solutionMetadata!.drawingFile!
-                                  .trim()
-                                  .isNotEmpty) ||
-                          (crop.userSolution?.drawingFile != null &&
-                              crop.userSolution!.drawingFile!
-                                  .trim()
-                                  .isNotEmpty);
-                      final hasAiSolution =
-                          crop.solutionMetadata?.aiSolution != null ||
-                          crop.userSolution?.aiSolution != null;
+                  // Check if there's any actual solution data
+                  final hasAnswerChoice =
+                      (crop.solutionMetadata?.answerChoice != null ||
+                      crop.userSolution?.answerChoice != null);
+                  final hasExplanation =
+                      (crop.solutionMetadata?.explanation != null &&
+                          crop.solutionMetadata!.explanation!
+                              .trim()
+                              .isNotEmpty) ||
+                      (crop.userSolution?.explanation != null &&
+                          crop.userSolution!.explanation!.trim().isNotEmpty);
+                  final hasDrawing =
+                      (crop.solutionMetadata?.drawingFile != null &&
+                          crop.solutionMetadata!.drawingFile!
+                              .trim()
+                              .isNotEmpty) ||
+                      (crop.userSolution?.drawingFile != null &&
+                          crop.userSolution!.drawingFile!.trim().isNotEmpty);
+                  final hasAiSolution =
+                      crop.solutionMetadata?.aiSolution != null ||
+                      crop.userSolution?.aiSolution != null;
 
-                      final hasSolution =
-                          hasAnswerChoice ||
-                          hasExplanation ||
-                          hasDrawing ||
-                          hasAiSolution;
-                      final buttonColor = hasSolution
-                          ? Colors.green.shade600
-                          : Colors.blue.shade600;
+                  final hasSolution =
+                      hasAnswerChoice ||
+                      hasExplanation ||
+                      hasDrawing ||
+                      hasAiSolution;
+                  final buttonColor = hasSolution
+                      ? Colors.green.shade600
+                      : Colors.blue.shade600;
 
-                      return Stack(
-                        children: [
-                          // Buton
-                          Positioned(
-                            left: buttonLeft,
-                            top: buttonTop,
-                            child: GestureDetector(
-                              onTap: () {
-                                print(
-                                  'Question ${crop.questionNumber} clicked!',
-                                );
-                                // Show crop image with answer section
-                                _showCropImage(crop.imageFile);
-                              },
-                              child: Stack(
-                                children: [
-                                  Container(
-                                    width: buttonSize,
-                                    height: buttonSize,
-                                    decoration: BoxDecoration(
-                                      color: buttonColor,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: Colors.white,
-                                        width: 2,
+                  return Stack(
+                    children: [
+                      // Buton
+                      Positioned(
+                        left: buttonLeft,
+                        top: buttonTop,
+                        child: GestureDetector(
+                          onTap: () {
+                            print('Question ${crop.questionNumber} clicked!');
+                            // Show crop image with answer section
+                            _showCropImage(crop.imageFile);
+                          },
+                          child: Stack(
+                            children: [
+                              Container(
+                                width: buttonSize,
+                                height: buttonSize,
+                                decoration: BoxDecoration(
+                                  color: buttonColor,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.5,
                                       ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.5,
-                                          ),
-                                          blurRadius: 6,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ],
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
                                     ),
-                                    child: Center(
-                                      child: Text(
-                                        "${crop.questionNumber ?? '?'}",
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
+                                  ],
+                                ),
+                                child: Center(
+                                  child: Text(
+                                    "${crop.questionNumber ?? '?'}",
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
-                                  // Solution indicator badge
-                                  if (hasSolution)
-                                    Positioned(
-                                      right: -2,
-                                      top: -2,
-                                      child: Container(
-                                        width: 12,
-                                        height: 12,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: buttonColor,
-                                            width: 1.5,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.check,
-                                          size: 8,
-                                          color: Colors.green,
-                                        ),
+                                ),
+                              ),
+                              // Solution indicator badge
+                              if (hasSolution)
+                                Positioned(
+                                  right: -2,
+                                  top: -2,
+                                  child: Container(
+                                    width: 12,
+                                    height: 12,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: buttonColor,
+                                        width: 1.5,
                                       ),
                                     ),
-                                ],
-                              ),
-                            ),
+                                    child: const Icon(
+                                      Icons.check,
+                                      size: 8,
+                                      color: Colors.green,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                        ],
-                      );
-                    }).toList(),
-                  ),
-                );
-              },
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              ),
             );
+          },
+        );
       },
     );
   }
@@ -1726,7 +1724,12 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                 minScale: _minZoom,
                 maxScale: _maxZoom,
                 boundaryMargin: const EdgeInsets.all(20),
-                panEnabled: true, // Her zaman pan aktif - zoom sonrası kaydırma için
+                panEnabled:
+                    !(tool.pencil ||
+                        tool.eraser ||
+                        tool.highlighter ||
+                        tool.shape ||
+                        tool.grab), // Pan aktif: mouse mode ve zoom sonrası kaydırma için
                 scaleEnabled: true,
                 child: Listener(
                   onPointerDown: (event) {
@@ -1759,11 +1762,16 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                         FutureBuilder<PdfDocument>(
                           future: widget.documentRef,
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState == ConnectionState.waiting) {
-                              return const Center(child: CircularProgressIndicator());
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
                             }
                             if (!snapshot.hasData) {
-                              return const Center(child: Text('Failed to load PDF'));
+                              return const Center(
+                                child: Text('Failed to load PDF'),
+                              );
                             }
                             return PdfViewer(
                               PdfDocumentRefDirect(snapshot.data!),
@@ -1783,7 +1791,8 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                                   // Tüm sayfaların maksimum genişliğini bul
                                   final maxWidth = pages.fold<double>(
                                     0.0,
-                                    (prev, page) => prev > page.width ? prev : page.width,
+                                    (prev, page) =>
+                                        prev > page.width ? prev : page.width,
                                   );
 
                                   final pageLayouts = <Rect>[];
@@ -1791,43 +1800,69 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
 
                                   for (var page in pages) {
                                     // Sayfayı genişliğe göre ölçekle
-                                    final pageHeight = page.height * maxWidth / page.width;
+                                    final pageHeight =
+                                        page.height * maxWidth / page.width;
                                     pageLayouts.add(
-                                      Rect.fromLTWH(margin, y, maxWidth, pageHeight),
+                                      Rect.fromLTWH(
+                                        margin,
+                                        y,
+                                        maxWidth,
+                                        pageHeight,
+                                      ),
                                     );
                                     y += pageHeight + margin;
                                   }
 
                                   return PdfPageLayout(
                                     pageLayouts: pageLayouts,
-                                    documentSize: Size(maxWidth + margin * 2, y),
+                                    documentSize: Size(
+                                      maxWidth + margin * 2,
+                                      y,
+                                    ),
                                   );
                                 },
                                 // Başlangıç zoom seviyesini ekran genişliğine göre ayarla
-                                calculateInitialZoom: (document, controller, fitZoom, coverZoom) {
-                                  // fitZoom kullan - sayfa ekran genişliğine sığar
-                                  return fitZoom;
-                                },
+                                calculateInitialZoom:
+                                    (document, controller, fitZoom, coverZoom) {
+                                      // fitZoom kullan - sayfa ekran genişliğine sığar
+                                      return fitZoom;
+                                    },
                                 // Hem dikey hem yatay kaydırma - zoom sonrası drag için gerekli
                                 panAxis: PanAxis.free,
-                                panEnabled: true,
+                                panEnabled:
+                                    !(tool.pencil ||
+                                        tool.eraser ||
+                                        tool.highlighter ||
+                                        tool.shape ||
+                                        tool.grab),
                                 onViewerReady: (document, controller) {
                                   // Viewer hazır olduğunda ilk sayfa bilgisini ayarla
-                                  if (mounted && controller.pageNumber != null) {
-                                    setState(() => _currentPage = controller.pageNumber!);
+                                  if (mounted &&
+                                      controller.pageNumber != null) {
+                                    setState(
+                                      () =>
+                                          _currentPage = controller.pageNumber!,
+                                    );
                                   }
                                 },
                                 onPageChanged: (pageNumber) {
-                                  if (pageNumber != null && pageNumber != _currentPage && mounted) {
+                                  if (pageNumber != null &&
+                                      pageNumber != _currentPage &&
+                                      mounted) {
                                     // Controller hazır olana kadar bekle
-                                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                                      if (mounted) {
-                                        setState(() => _currentPage = pageNumber);
-                                        _repaintNotifier.value++;
-                                        _updateUndoRedoState();
-                                        _timeTracker.onPageChanged(pageNumber);
-                                      }
-                                    });
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback((_) {
+                                          if (mounted) {
+                                            setState(
+                                              () => _currentPage = pageNumber,
+                                            );
+                                            _repaintNotifier.value++;
+                                            _updateUndoRedoState();
+                                            _timeTracker.onPageChanged(
+                                              pageNumber,
+                                            );
+                                          }
+                                        });
                                   }
                                 },
                                 backgroundColor: Colors.white,
@@ -1870,8 +1905,8 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                     behavior: HitTestBehavior.translucent,
                   ),
                 ),
-              // Mouse/grab swipe detection OUTSIDE InteractiveViewer
-              if (tool.grab || tool.mouse)
+              // Grab swipe detection OUTSIDE InteractiveViewer (mouse mode uses native InteractiveViewer panning)
+              if (tool.grab)
                 Positioned.fill(
                   child: GestureDetector(
                     onScaleStart: _handleScaleStart,
@@ -1929,10 +1964,11 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                           }
 
                           // Transform content-space rect to screen-space for display
-                          final screenSpaceRect = custom_matrix.MatrixUtils.transformRect(
-                            transformationController.value,
-                            magnifierRect,
-                          );
+                          final screenSpaceRect =
+                              custom_matrix.MatrixUtils.transformRect(
+                                transformationController.value,
+                                magnifierRect,
+                              );
 
                           return CustomPaint(
                             painter: MagnifierPainter(
@@ -1969,7 +2005,9 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
               print('🔍 Magnifier transformation:');
               print('   Content-space rect: $_magnifiedRect');
               print('   Screen-space rect: $screenSpaceRect');
-              print('   Transform matrix scale: ${transformationController.value.getMaxScaleOnAxis()}');
+              print(
+                '   Transform matrix scale: ${transformationController.value.getMaxScaleOnAxis()}',
+              );
 
               return MagnifiedContentOverlay(
                 selectedArea: screenSpaceRect,
@@ -2426,13 +2464,17 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
             crop.userSolution!.drawingFile!.trim().isNotEmpty);
     final hasSolutionImages =
         (crop.solutionMetadata?.solutionImages != null &&
-            crop.solutionMetadata!.solutionImages.isNotEmpty);
+        crop.solutionMetadata!.solutionImages.isNotEmpty);
     final hasAiSolution =
         crop.solutionMetadata?.aiSolution != null ||
         crop.userSolution?.aiSolution != null;
 
     final hasSolution =
-        hasAnswerChoice || hasExplanation || hasDrawing || hasSolutionImages || hasAiSolution;
+        hasAnswerChoice ||
+        hasExplanation ||
+        hasDrawing ||
+        hasSolutionImages ||
+        hasAiSolution;
 
     if (!hasSolution) {
       return const Center(
@@ -2767,13 +2809,17 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
             crop.userSolution!.drawingFile!.trim().isNotEmpty);
     final hasSolutionImages =
         (crop.solutionMetadata?.solutionImages != null &&
-            crop.solutionMetadata!.solutionImages.isNotEmpty);
+        crop.solutionMetadata!.solutionImages.isNotEmpty);
     final hasAiSolution =
         crop.solutionMetadata?.aiSolution != null ||
         crop.userSolution?.aiSolution != null;
 
     final hasSolution =
-        hasAnswerChoice || hasExplanation || hasDrawing || hasSolutionImages || hasAiSolution;
+        hasAnswerChoice ||
+        hasExplanation ||
+        hasDrawing ||
+        hasSolutionImages ||
+        hasAiSolution;
 
     if (!hasSolution) {
       return const SizedBox.shrink();
@@ -3173,7 +3219,10 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                   if (crop.userSolution?.hasAnimationData == true ||
                       crop.userSolution?.drawingDataFile != null ||
                       (crop.solutionMetadata?.solutionImages != null &&
-                          crop.solutionMetadata!.solutionImages.isNotEmpty)) ...[
+                          crop
+                              .solutionMetadata!
+                              .solutionImages
+                              .isNotEmpty)) ...[
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
