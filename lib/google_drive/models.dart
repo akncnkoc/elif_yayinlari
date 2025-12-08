@@ -4,6 +4,7 @@ class DriveItem {
   final bool isFolder;
   final String? mimeType;
   final int? size;
+  final String? thumbnailLink;
 
   DriveItem({
     required this.id,
@@ -11,6 +12,7 @@ class DriveItem {
     required this.isFolder,
     this.mimeType,
     this.size,
+    this.thumbnailLink,
   });
 
   bool get isBook => !isFolder && name.toLowerCase().endsWith('.book');
@@ -25,6 +27,7 @@ class DriveItem {
       isFolder: isFolder,
       mimeType: mimeType,
       size: json['size'] != null ? int.tryParse(json['size'].toString()) : null,
+      thumbnailLink: json['thumbnailLink'] as String?,
     );
   }
 }

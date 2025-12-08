@@ -66,7 +66,7 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
   bool _isPdfLoading = true;
 
   // Sidebar Position State
-  Offset _sidebarPosition = const Offset(16, 200);
+  Offset _sidebarPosition = const Offset(16, 10);
 
   @override
   void initState() {
@@ -87,13 +87,9 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
 
   Future<void> _loadPdf() async {
     try {
-      // PDF yüklenene kadar bekle
       await _pdfDocument;
-
-      // Controller'ın hazır olmasını bekle
       await Future.delayed(const Duration(milliseconds: 100));
 
-      // Controller listener ekle
       _pdfController.addListener(() {
         if (mounted && _pdfController.isReady) {
           setState(() {});
@@ -113,8 +109,6 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
 
   @override
   void dispose() {
-    // pdfrx: PdfViewerController doesn't need manual disposal
-    // _pdfController.dispose();
     _drawingProvider.dispose();
     super.dispose();
   }
@@ -179,7 +173,6 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
     _showAnalyzingDialog();
 
     try {
-      // 1. Seçili alanı capture et
       print('📸 Seçili alan capture ediliyor...');
       final imageBytes = await _captureSelectedArea();
 
@@ -189,7 +182,6 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
 
       print('✅ Seçili alan alındı: ${imageBytes.length} bytes');
 
-      // 2. Python API'ye gönder ve analiz et
       print('🔍 API\'ye gönderiliyor...');
       final result = await _service.analyzeImage(imageBytes, returnImage: true);
 
@@ -202,10 +194,8 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
 
       print('✅ Analiz tamamlandı: ${result.soruSayisi} soru bulundu');
 
-      // 3. Seçimi temizle
       state.clearSelection();
 
-      // 4. Sonuçları göster
       _showResultDialog(result);
     } catch (e) {
       if (!mounted) return;
@@ -399,20 +389,16 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
       child: Scaffold(
         body: Stack(
           children: [
-            // Ana içerik
             Column(
               children: [
-                // ÜST BAR
                 Consumer<DrawingProvider>(
                   builder: (context, drawingProvider, child) {
-                    // Don't show top bar if PDF is still loading
                     if (_isPdfLoading) {
                       return const SizedBox.shrink();
                     }
 
                     final state = _drawingKey.currentState;
 
-                    // If state is null, show a simple top bar without time tracking
                     if (state == null) {
                       return PdfViewerTopBar(
                         pdfPath: widget.pdfPath,
@@ -421,9 +407,7 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                         showThumbnails: _showThumbnails,
                         onToggleThumbnails: _toggleThumbnails,
                         zoomLevel: drawingProvider.zoomLevel,
-                        timeTracker: PageTimeTracker(
-                          onUpdate: () {},
-                        ), // Dummy tracker
+                        timeTracker: PageTimeTracker(onUpdate: () {}),
                         currentPageTime: '0sn',
                         onBack: widget.onBack,
                         onGoToPage: _showGoToPageDialog,
@@ -465,7 +449,6 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                         child: Listener(
                           onPointerSignal: (event) {
                             if (event is PointerScrollEvent) {
-                              // print('Scroll event: ${event.scrollDelta}');
                               final controller = _pdfController;
                               if (controller.isReady) {
                                 final matrix = controller.value.clone();

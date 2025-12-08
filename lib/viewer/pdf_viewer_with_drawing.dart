@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:vector_math/vector_math_64.dart' show Vector3;
 import 'package:archive/archive.dart';
-import 'package:image/image.dart' as img;
+
 import 'package:provider/provider.dart';
 import 'stroke.dart';
 import 'drawing_painter.dart';
@@ -16,8 +16,11 @@ import 'page_time_tracker.dart';
 import 'magnifier_overlay.dart';
 import 'magnified_content_overlay.dart';
 import 'drawing_provider.dart';
+import 'package:akilli_tahta_proje_demo/viewer/solution_panel.dart';
+
+import 'package:akilli_tahta_proje_demo/viewer/widgets/drawable_content_widget.dart';
 import '../models/crop_data.dart';
-import 'widgets/solution_detail_dialog.dart';
+
 import 'dart:math' as math;
 
 // Import new components and utilities
@@ -100,7 +103,6 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
 
   Offset? _panStartPosition;
   Offset? _panLastPosition;
-  DateTime? _panStartTime;
 
   // Use AppConstants for gesture thresholds
   static const double _swipeVelocityThreshold =
@@ -184,6 +186,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
         // Initialize current page from controller when ready
         if (widget.controller.isReady && widget.controller.pageNumber != null) {
           _currentPage = widget.controller.pageNumber!;
+          _drawingProvider?.setCurrentPage(_currentPage);
         }
       }
     });
@@ -220,6 +223,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     final page = widget.controller.pageNumber!;
     if (page != _currentPage) {
       setState(() => _currentPage = page);
+      _drawingProvider?.setCurrentPage(page); // Update provider
       _repaintNotifier.value++;
       _updateUndoRedoState();
       _timeTracker.onPageChanged(page);
@@ -318,7 +322,6 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       if (tool.grab || tool.mouse) {
         _isPanning = true;
         _panStartPosition = details.localFocalPoint;
-        _panStartTime = DateTime.now();
         print("👆 1 pointer: panning mode");
       } else if (tool.shape || tool.pencil || tool.eraser || tool.highlighter) {
         if (_rotationAngle != 0.0) {
@@ -393,38 +396,35 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     _scaleStartFocalPoint = null;
 
     if ((tool.grab || tool.mouse) && _isPanning) {
-      if (_panStartPosition != null &&
-          _panLastPosition != null &&
-          _panStartTime != null) {
+      if (_panStartPosition != null && _panLastPosition != null) {
         final distance = _panLastPosition! - _panStartPosition!;
-        final duration = DateTime.now().difference(_panStartTime!);
-        final velocity = distance.dy.abs() / (duration.inMilliseconds / 1000.0);
+
+        // Use fling velocity from gesture details for more accurate swipe detection
+        final velocity = details.velocity.pixelsPerSecond.dy;
 
         // Dikey swipe - dy kullan (yatay yerine)
-        final isVerticalSwipe = distance.dy.abs() > distance.dx.abs() * 2.0;
+        final isVerticalSwipe = distance.dy.abs() > distance.dx.abs() * 1.2;
 
-        final isFastEnough = velocity > _swipeVelocityThreshold;
+        final isFastEnough = velocity.abs() > _swipeVelocityThreshold;
         final isLongEnough = distance.dy.abs() > _swipeDistanceThreshold;
 
-        if (isVerticalSwipe && isFastEnough && isLongEnough) {
+        // Check if zoomed in
+        final currentScale = transformationController.value.getMaxScaleOnAxis();
+        final isZoomedIn = currentScale > 1.05;
+
+        if (isVerticalSwipe && isFastEnough && isLongEnough && !isZoomedIn) {
           setState(() {
             transformationController.value = Matrix4.identity();
             _lastRenderedScale = 1.0;
             _pdfScaleNotifier.value = 1.0;
           });
 
-          // Yukarı kaydırma (negatif dy) -> Sonraki sayfa
-          // Aşağı kaydırma (pozitif dy) -> Önceki sayfa
-          if (distance.dy < 0) {
-            widget.controller.nextPage(
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOutCubic,
-            );
+          // Yukarı kaydırma (negatif velocity) -> Sonraki sayfa
+          // Aşağı kaydırma (pozitif velocity) -> Önceki sayfa
+          if (velocity < 0) {
+            widget.controller.nextPage();
           } else {
-            widget.controller.previousPage(
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOutCubic,
-            );
+            widget.controller.previousPage();
           }
         }
       }
@@ -432,7 +432,6 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       _isPanning = false;
       _panStartPosition = null;
       _panLastPosition = null;
-      _panStartTime = null;
     } else if (tool.shape) {
       _endShape();
     } else if (tool.pencil || tool.eraser || tool.highlighter) {
@@ -809,6 +808,11 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
 
     _strokes.removeWhere((stroke) => !stroke.erase);
     _strokes.addAll(newStrokes);
+
+    // Invalidate cache since we modified past strokes
+    setState(() {
+      _repaintNotifier.value++; // Trigger repaint
+    });
   }
 
   List<Offset> _expandShapeToPoints(Stroke stroke) {
@@ -1621,13 +1625,13 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                                       (hasSolution
                                               ? Colors.green.shade700
                                               : Colors.blue.shade700)
-                                          .withValues(alpha: 0.4),
+                                          .withOpacity(0.4),
                                   blurRadius: 8,
                                   spreadRadius: 1,
                                   offset: const Offset(0, 3),
                                 ),
                                 BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.3),
+                                  color: Colors.black.withOpacity(0.3),
                                   blurRadius: 4,
                                   offset: const Offset(0, 2),
                                 ),
@@ -1644,7 +1648,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                                       shape: BoxShape.circle,
                                       gradient: RadialGradient(
                                         colors: [
-                                          Colors.white.withValues(alpha: 0.3),
+                                          Colors.white.withOpacity(0.3),
                                           Colors.transparent,
                                         ],
                                       ),
@@ -1662,9 +1666,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                                       letterSpacing: -0.5,
                                       shadows: [
                                         Shadow(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.5,
-                                          ),
+                                          color: Colors.black.withOpacity(0.5),
                                           offset: const Offset(0, 1),
                                           blurRadius: 2,
                                         ),
@@ -1694,8 +1696,8 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                                         ),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: Colors.amber.withValues(
-                                              alpha: 0.6,
+                                            color: Colors.amber.withOpacity(
+                                              0.6,
                                             ),
                                             blurRadius: 4,
                                             spreadRadius: 1,
@@ -1813,62 +1815,55 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                 valueListenable: transformationController,
                 builder: (context, matrix, child) {
                   final currentScale = matrix.getMaxScaleOnAxis();
-                  return GestureDetector(
-                    onVerticalDragEnd: (details) {
-                      if (currentScale > 1.0) return;
-                      // Multi-touch (zoom) yapıldıysa swipe'ı engelle
-                      if (_wasMultiTouch) return;
-
-                      if (details.primaryVelocity == null) return;
-                      // Sensitivity threshold
-                      if (details.primaryVelocity!.abs() < 200) return;
-
-                      if (details.primaryVelocity! < 0) {
-                        // Swipe Up -> Next Page
-                        widget.controller.nextPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOutCubic,
-                        );
-                      } else {
-                        // Swipe Down -> Previous Page
-                        widget.controller.previousPage(
-                          duration: const Duration(milliseconds: 300),
-                          curve: Curves.easeOutCubic,
-                        );
+                  return InteractiveViewer(
+                    transformationController: transformationController,
+                    minScale: _minZoom,
+                    maxScale: _maxZoom,
+                    boundaryMargin: EdgeInsets.zero,
+                    panEnabled: true, // Always enable panning for better UX
+                    scaleEnabled: true,
+                    onInteractionEnd: (details) {
+                      // Swipe detection logic
+                      if (details.velocity.pixelsPerSecond.dy.abs() > 200) {
+                        final velocity = details.velocity.pixelsPerSecond.dy;
+                        if (velocity < 0) {
+                          // Swipe Up -> Next Page
+                          widget.controller.nextPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOutCubic,
+                          );
+                        } else {
+                          // Swipe Down -> Previous Page
+                          widget.controller.previousPage(
+                            duration: const Duration(milliseconds: 300),
+                            curve: Curves.easeOutCubic,
+                          );
+                        }
                       }
                     },
-                    child: InteractiveViewer(
-                      transformationController: transformationController,
-                      minScale: _minZoom,
-                      maxScale: _maxZoom,
-                      boundaryMargin: const EdgeInsets.all(0),
-                      // Only enable panning when zoomed in
-                      panEnabled: currentScale > 1.0,
-                      scaleEnabled: true,
-                      child: Listener(
-                        onPointerDown: (event) {
-                          setState(() {
-                            _activePointers++;
-                            if (_activePointers > 1) {
-                              _wasMultiTouch = true;
-                            } else if (_activePointers == 1) {
-                              // Yeni gesture başlıyor
-                              _wasMultiTouch = false;
-                            }
-                          });
-                        },
-                        onPointerUp: (event) {
-                          setState(() {
-                            _activePointers--;
-                          });
-                        },
-                        onPointerCancel: (event) {
-                          setState(() {
-                            _activePointers--;
-                          });
-                        },
-                        child: child!,
-                      ),
+                    child: Listener(
+                      onPointerDown: (event) {
+                        setState(() {
+                          _activePointers++;
+                          if (_activePointers > 1) {
+                            _wasMultiTouch = true;
+                          } else if (_activePointers == 1) {
+                            // Yeni gesture başlıyor
+                            _wasMultiTouch = false;
+                          }
+                        });
+                      },
+                      onPointerUp: (event) {
+                        setState(() {
+                          _activePointers--;
+                        });
+                      },
+                      onPointerCancel: (event) {
+                        setState(() {
+                          _activePointers--;
+                        });
+                      },
+                      child: child!,
                     ),
                   );
                 },
@@ -1891,90 +1886,100 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                               child: Text('Failed to load PDF'),
                             );
                           }
-                          return PdfViewer(
-                            PdfDocumentRefDirect(snapshot.data!),
-                            controller: widget.controller,
-                            params: PdfViewerParams(
-                              boundaryMargin: EdgeInsets.zero,
-                              minScale: 1.0,
-                              maxScale: 5.0,
-                              layoutPages: (pages, params) {
-                                // Tek sayfa dikey düzen - sayfalar ekran genişliğine sığacak şekilde
-                                if (pages.isEmpty) {
-                                  return PdfPageLayout(
-                                    pageLayouts: [],
-                                    documentSize: Size.zero,
+                          return IgnorePointer(
+                            child: PdfViewer(
+                              PdfDocumentRefDirect(snapshot.data!),
+                              controller: widget.controller,
+                              params: PdfViewerParams(
+                                boundaryMargin: EdgeInsets.zero,
+                                minScale: 0.1, // Allow zooming out for fitZoom
+                                maxScale: 20.0, // Allow zooming in if needed
+                                layoutPages: (pages, params) {
+                                  // Tek sayfa dikey düzen - sayfalar ekran genişliğine sığacak şekilde
+                                  if (pages.isEmpty) {
+                                    return PdfPageLayout(
+                                      pageLayouts: [],
+                                      documentSize: Size.zero,
+                                    );
+                                  }
+
+                                  final margin = params.margin;
+
+                                  // Tüm sayfaların maksimum genişliğini bul
+                                  final maxWidth = pages.fold<double>(
+                                    0.0,
+                                    (prev, page) =>
+                                        prev > page.width ? prev : page.width,
                                   );
-                                }
 
-                                final margin = params.margin;
+                                  final pageLayouts = <Rect>[];
+                                  double y = margin;
 
-                                // Tüm sayfaların maksimum genişliğini bul
-                                final maxWidth = pages.fold<double>(
-                                  0.0,
-                                  (prev, page) =>
-                                      prev > page.width ? prev : page.width,
-                                );
+                                  for (var page in pages) {
+                                    // Sayfayı genişliğe göre ölçekle
+                                    final pageHeight =
+                                        page.height * maxWidth / page.width;
+                                    pageLayouts.add(
+                                      Rect.fromLTWH(
+                                        margin,
+                                        y,
+                                        maxWidth,
+                                        pageHeight,
+                                      ),
+                                    );
+                                    y += pageHeight + margin;
+                                  }
 
-                                final pageLayouts = <Rect>[];
-                                double y = margin;
-
-                                for (var page in pages) {
-                                  // Sayfayı genişliğe göre ölçekle
-                                  final pageHeight =
-                                      page.height * maxWidth / page.width;
-                                  pageLayouts.add(
-                                    Rect.fromLTWH(
-                                      margin,
+                                  return PdfPageLayout(
+                                    pageLayouts: pageLayouts,
+                                    documentSize: Size(
+                                      maxWidth + margin * 2,
                                       y,
-                                      maxWidth,
-                                      pageHeight,
                                     ),
                                   );
-                                  y += pageHeight + margin;
-                                }
-
-                                return PdfPageLayout(
-                                  pageLayouts: pageLayouts,
-                                  documentSize: Size(maxWidth + margin * 2, y),
-                                );
-                              },
-                              // Başlangıç zoom seviyesini ekran genişliğine göre ayarla
-                              calculateInitialZoom:
-                                  (document, controller, fitZoom, coverZoom) {
-                                    // fitZoom kullan - sayfa ekran genişliğine sığar
-                                    return fitZoom;
-                                  },
-                              // Hem dikey hem yatay kaydırma - zoom sonrası drag için gerekli
-                              panAxis: PanAxis.free,
-                              panEnabled: !tool.grab,
-                              scrollByMouseWheel: 2.0, // Increased sensitivity
-                              onViewerReady: (document, controller) {
-                                // Viewer hazır olduğunda ilk sayfa bilgisini ayarla
-                                if (mounted && controller.pageNumber != null) {
-                                  setState(
-                                    () => _currentPage = controller.pageNumber!,
-                                  );
-                                }
-                              },
-                              onPageChanged: (pageNumber) {
-                                if (pageNumber != null &&
-                                    pageNumber != _currentPage &&
-                                    mounted) {
-                                  // Controller hazır olana kadar bekle
-                                  WidgetsBinding.instance.addPostFrameCallback((
-                                    _,
-                                  ) {
-                                    if (mounted) {
-                                      setState(() => _currentPage = pageNumber);
-                                      _repaintNotifier.value++;
-                                      _updateUndoRedoState();
-                                      _timeTracker.onPageChanged(pageNumber);
-                                    }
-                                  });
-                                }
-                              },
-                              backgroundColor: Colors.white,
+                                },
+                                // Başlangıç zoom seviyesini ekran genişliğine göre ayarla
+                                calculateInitialZoom:
+                                    (document, controller, fitZoom, coverZoom) {
+                                      // fitZoom kullan - sayfa ekran genişliğine sığar
+                                      return fitZoom;
+                                    },
+                                // Disable inner pan to avoid conflict
+                                panEnabled: false,
+                                scrollByMouseWheel:
+                                    2.0, // Increased sensitivity
+                                onViewerReady: (document, controller) {
+                                  // Viewer hazır olduğunda ilk sayfa bilgisini ayarla
+                                  if (mounted &&
+                                      controller.pageNumber != null) {
+                                    setState(
+                                      () =>
+                                          _currentPage = controller.pageNumber!,
+                                    );
+                                  }
+                                },
+                                onPageChanged: (pageNumber) {
+                                  if (pageNumber != null &&
+                                      pageNumber != _currentPage &&
+                                      mounted) {
+                                    // Controller hazır olana kadar bekle
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback((_) {
+                                          if (mounted) {
+                                            setState(
+                                              () => _currentPage = pageNumber,
+                                            );
+                                            _repaintNotifier.value++;
+                                            _updateUndoRedoState();
+                                            _timeTracker.onPageChanged(
+                                              pageNumber,
+                                            );
+                                          }
+                                        });
+                                  }
+                                },
+                                backgroundColor: Colors.white,
+                              ),
                             ),
                           );
                         },
@@ -2138,17 +2143,19 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                 _magnifiedRect!,
               );
 
-              return MagnifiedContentOverlay(
-                selectedArea: screenSpaceRect,
-                contentKey: _repaintBoundaryKey,
-                magnification: 2.0,
-                onClose: () {
-                  setState(() {
-                    _showMagnifiedView = false;
-                    _magnifiedRect = null;
-                    _magnifierState = MagnifierState();
-                  });
-                },
+              return Positioned.fill(
+                child: MagnifiedContentOverlay(
+                  selectedArea: screenSpaceRect,
+                  contentKey: _repaintBoundaryKey,
+                  magnification: 2.0,
+                  onClose: () {
+                    setState(() {
+                      _showMagnifiedView = false;
+                      _magnifiedRect = null;
+                      _magnifierState = MagnifierState();
+                    });
+                  },
+                ),
               );
             },
           ),
@@ -2165,7 +2172,7 @@ class _SelectionPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.blue.withValues(alpha: 0.3)
+      ..color = Colors.blue.withOpacity(0.3)
       ..style = PaintingStyle.fill;
 
     final borderPaint = Paint()
@@ -2214,8 +2221,25 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
   late int _currentIndex;
   late List<CropItem> _sortedCrops; // Question number'a göre sıralanmış
 
-  // Answer section expansion state
-  bool _isAnswerExpanded = false;
+  // Whiteboard state
+  bool _showWhiteboard = false;
+  bool _isSolutionExpanded = false;
+  final GlobalKey<DrawableContentWidgetState> _whiteboardKey = GlobalKey();
+  final ValueNotifier<ToolState> _whiteboardToolNotifier = ValueNotifier(
+    const ToolState(
+      pencil: true,
+      eraser: false,
+      highlighter: false,
+      grab: false,
+      mouse: false,
+      shape: false,
+      selection: false,
+      magnifier: false,
+      selectedShape: ShapeType.rectangle,
+      color: Colors.black,
+      width: 2.0,
+    ),
+  );
 
   @override
   void initState() {
@@ -2240,1069 +2264,205 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
 
   @override
   void dispose() {
+    _whiteboardToolNotifier.dispose();
     super.dispose();
   }
 
-  void _showManualSolutionImage(String drawingFileName) async {
-    final imageBytes = await _loadDrawingImage(drawingFileName);
-
-    if (imageBytes == null || !mounted) return;
-
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
+  Widget _buildToolButton({
+    required IconData icon,
+    required bool isSelected,
+    required String tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
         child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.8,
-            maxHeight: MediaQuery.of(context).size.height * 0.8,
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.blue.withValues(alpha: 0.3)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected
+                  ? Colors.blue
+                  : Colors.white.withValues(alpha: 0.3),
+              width: 1.5,
+            ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(12),
-                    topRight: Radius.circular(12),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.draw,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        'Manuel Çözüm Çizimi',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              // Image
-              Flexible(
-                child: InteractiveViewer(
-                  minScale: 0.5,
-                  maxScale: 4.0,
-                  child: Image.memory(imageBytes, fit: BoxFit.contain),
-                ),
-              ),
-            ],
-          ),
+          child: Icon(icon, color: Colors.white, size: 20),
         ),
       ),
     );
   }
 
-  Future<Uint8List?> _loadDrawingImage(String drawingPath) async {
-    if (widget.zipFilePath == null) return null;
+  Widget _buildColorPickerForWhiteboard(Color currentColor) {
+    return Tooltip(
+      message: 'Renk Seç',
+      child: InkWell(
+        onTap: () {
+          _showColorPickerDialog(currentColor, (color) {
+            _whiteboardToolNotifier.value = _whiteboardToolNotifier.value
+                .copyWith(color: color);
+          });
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: _buildColorPreview(currentColor),
+      ),
+    );
+  }
 
-    try {
-      final zipBytes = await File(widget.zipFilePath!).readAsBytes();
-      final archive = ZipDecoder().decodeBytes(zipBytes);
+  Widget _buildColorPreview(Color color) {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.3),
+          width: 1.5,
+        ),
+      ),
+      child: Container(
+        width: 20,
+        height: 20,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+        ),
+      ),
+    );
+  }
 
-      Uint8List? imageBytes;
-      for (final file in archive) {
-        if (file.isFile && file.name == drawingPath) {
-          imageBytes = file.content as Uint8List;
-          break;
-        }
-      }
-
-      if (imageBytes == null) return null;
-
-      final crop = _sortedCrops[_currentIndex];
-      final cropHeight = crop.coordinates.height;
-
-      // Decode the image
-      final image = img.decodeImage(imageBytes);
-      if (image == null) return imageBytes;
-
-      final croppedImage = img.copyCrop(
-        image,
-        x: 0,
-        y: cropHeight, // Start from the end of question
-        width: image.width,
-        height: image.height - cropHeight, // Remaining height (solution part)
-      );
-
-      // Encode back to PNG
-      return Uint8List.fromList(img.encodePng(croppedImage));
-    } catch (e) {
-      print('Error loading/cropping drawing: $e');
-    }
-    return null;
+  void _showColorPickerDialog(
+    Color currentColor,
+    Function(Color) onColorSelected,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Renk Seç'),
+        content: SingleChildScrollView(
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children:
+                [
+                  Colors.red,
+                  Colors.blue,
+                  Colors.green,
+                  Colors.yellow,
+                  Colors.orange,
+                  Colors.purple,
+                  Colors.pink,
+                  Colors.black,
+                  Colors.white,
+                  Colors.brown,
+                ].map((color) {
+                  return InkWell(
+                    onTap: () {
+                      onColorSelected(color);
+                      Navigator.pop(context);
+                    },
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: color == currentColor
+                              ? Colors.blue
+                              : Colors.grey,
+                          width: color == currentColor ? 3 : 1,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Kapat'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildSolutionToggleButton({bool rotate = false}) {
     final scheme = Theme.of(context).colorScheme;
+    final maxSize = MediaQuery.of(context).size.width;
     return Container(
-      width: !rotate ? 240 : 60,
+      width: !rotate ? maxSize : 48,
+      height: rotate ? double.infinity : 48,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            scheme.primaryContainer.withValues(alpha: 0.8),
-            scheme.primaryContainer.withValues(alpha: 0.6),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.primary.withValues(alpha: 0.2),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: RotatedBox(
-        quarterTurns: !rotate ? 0 : 3,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () {
-              setState(() {
-                _isAnswerExpanded = !_isAnswerExpanded;
-              });
-            },
-            borderRadius: BorderRadius.circular(12),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          scheme.primary.withValues(alpha: 0.2),
-                          scheme.primary.withValues(alpha: 0.1),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      rotate
-                          ? Icons.visibility_rounded
-                          : Icons.visibility_off_rounded,
-                      size: 20,
-                      color: scheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    rotate ? 'Çözümü Göster' : 'Çözümü Gizle',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: scheme.onPrimaryContainer,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAnswerSectionHorizontal() {
-    final crop = _sortedCrops[_currentIndex];
-
-    // Check if there's any actual solution data
-    final hasAnswerChoice =
-        (crop.solutionMetadata?.answerChoice != null ||
-        crop.userSolution?.answerChoice != null);
-    final hasExplanation =
-        (crop.solutionMetadata?.explanation != null &&
-            crop.solutionMetadata!.explanation!.trim().isNotEmpty) ||
-        (crop.userSolution?.explanation != null &&
-            crop.userSolution!.explanation!.trim().isNotEmpty);
-    final hasDrawing =
-        (crop.solutionMetadata?.drawingFile != null &&
-            crop.solutionMetadata!.drawingFile!.trim().isNotEmpty) ||
-        (crop.userSolution?.drawingFile != null &&
-            crop.userSolution!.drawingFile!.trim().isNotEmpty);
-    final hasSolutionImages =
-        (crop.solutionMetadata?.solutionImages != null &&
-        crop.solutionMetadata!.solutionImages.isNotEmpty);
-    final hasAiSolution =
-        crop.solutionMetadata?.aiSolution != null ||
-        crop.userSolution?.aiSolution != null;
-
-    final hasSolution =
-        hasAnswerChoice ||
-        hasExplanation ||
-        hasDrawing ||
-        hasSolutionImages ||
-        hasAiSolution;
-
-    if (!hasSolution) {
-      return const Center(
-        child: Text('Çözüm bulunamadı', style: TextStyle(color: Colors.grey)),
-      );
-    }
-
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSolutionToggleButton(rotate: false),
-            Row(
-              children: [
-                Icon(
-                  Icons.check_circle,
-                  color: Colors.green.shade600,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'Çözüm',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Answer choice (large) - check both metadata and userSolution
-            if (crop.solutionMetadata?.answerChoice != null ||
-                crop.userSolution?.answerChoice != null) ...[
-              Center(
-                child: Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.primary.withValues(alpha: 0.3),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: Center(
-                    child: Text(
-                      crop.solutionMetadata?.answerChoice ??
-                          crop.userSolution?.answerChoice ??
-                          '',
-                      style: TextStyle(
-                        fontSize: 48,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onPrimary,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            if ((crop.userSolution?.explanation != null &&
-                    crop.userSolution!.explanation!.trim().isNotEmpty) ||
-                (crop.solutionMetadata?.explanation != null &&
-                    crop.solutionMetadata!.explanation!.trim().isNotEmpty) ||
-                (crop.userSolution?.drawingFile != null &&
-                    crop.userSolution!.drawingFile!.trim().isNotEmpty) ||
-                (crop.solutionMetadata?.drawingFile != null &&
-                    crop.solutionMetadata!.drawingFile!.trim().isNotEmpty)) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.edit_note,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.primary,
-                        ),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'Manuel Çözüm',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    // Show explanation if exists
-                    if ((crop.userSolution?.explanation != null &&
-                            crop.userSolution!.explanation!
-                                .trim()
-                                .isNotEmpty) ||
-                        (crop.solutionMetadata?.explanation != null &&
-                            crop.solutionMetadata!.explanation!
-                                .trim()
-                                .isNotEmpty)) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        crop.userSolution?.explanation?.trim() ??
-                            crop.solutionMetadata?.explanation?.trim() ??
-                            '',
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                    ],
-                    // Show drawing file button if exists
-                    if ((crop.userSolution?.drawingFile != null &&
-                            crop.userSolution!.drawingFile!
-                                .trim()
-                                .isNotEmpty) ||
-                        (crop.solutionMetadata?.drawingFile != null &&
-                            crop.solutionMetadata!.drawingFile!
-                                .trim()
-                                .isNotEmpty)) ...[
-                      const SizedBox(height: 12),
-                      OutlinedButton.icon(
-                        onPressed: () => _showManualSolutionImage(
-                          crop.userSolution?.drawingFile ??
-                              crop.solutionMetadata?.drawingFile ??
-                              '',
-                        ),
-                        icon: const Icon(Icons.image, size: 18),
-                        label: const Text('Çizimi Görüntüle'),
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // AI Solution
-            if (crop.userSolution?.aiSolution != null ||
-                crop.solutionMetadata?.aiSolution != null) ...[
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.tertiaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(
-                          Icons.psychology,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.tertiary,
-                        ),
-                        const SizedBox(width: 6),
-                        const Text(
-                          'AI Çözümü',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const Spacer(),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _getConfidenceColor(
-                              (crop.userSolution?.aiSolution ??
-                                      crop.solutionMetadata!.aiSolution!)
-                                  .confidence,
-                            ).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            '%${((crop.userSolution?.aiSolution ?? crop.solutionMetadata!.aiSolution!).confidence * 100).toInt()}',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: _getConfidenceColor(
-                                (crop.userSolution?.aiSolution ??
-                                        crop.solutionMetadata!.aiSolution!)
-                                    .confidence,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      (crop.userSolution?.aiSolution ??
-                              crop.solutionMetadata!.aiSolution!)
-                          .reasoning,
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    if ((crop.userSolution?.aiSolution ??
-                                crop.solutionMetadata!.aiSolution!)
-                            .steps
-                            .isNotEmpty &&
-                        (crop.userSolution?.aiSolution ??
-                                crop.solutionMetadata!.aiSolution!)
-                            .steps
-                            .first
-                            .isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Adımlar:',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      ...(crop.userSolution?.aiSolution ??
-                              crop.solutionMetadata!.aiSolution!)
-                          .steps
-                          .map(
-                            (step) => Padding(
-                              padding: const EdgeInsets.only(bottom: 4),
-                              child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    '• ',
-                                    style: TextStyle(fontSize: 11),
-                                  ),
-                                  Expanded(
-                                    child: Text(
-                                      step,
-                                      style: const TextStyle(fontSize: 11),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // Detailed Solution Button
-            if (crop.userSolution?.hasAnimationData == true ||
-                crop.userSolution?.drawingDataFile != null ||
-                (crop.solutionMetadata?.solutionImages != null &&
-                    crop.solutionMetadata!.solutionImages.isNotEmpty)) ...[
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () {
-                    final zipDir = widget.zipFilePath != null
-                        ? File(widget.zipFilePath!).parent.path
-                        : '';
-                    showDialog(
-                      context: context,
-                      barrierDismissible: false,
-                      builder: (context) => SolutionDetailDialog(
-                        crop: crop,
-                        baseDirectory: zipDir,
-                        zipFilePath: widget.zipFilePath,
-                        zipBytes: widget.zipBytes,
-                      ),
-                    );
-                  },
-                  icon: Icon(
-                    (crop.userSolution?.hasAnimationData == true ||
-                            crop.userSolution?.drawingDataFile != null)
-                        ? Icons.play_circle_outline
-                        : Icons.photo_library,
-                    size: 18,
-                  ),
-                  label: Text(
-                    (crop.userSolution?.hasAnimationData == true ||
-                            crop.userSolution?.drawingDataFile != null)
-                        ? 'Animasyonlu Çözümü İzle'
-                        : 'Çözüm Resimlerini Göster',
-                  ),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.tertiary,
-                    foregroundColor: Theme.of(context).colorScheme.onTertiary,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAnswerSection() {
-    final crop = _sortedCrops[_currentIndex];
-
-    // Check if there's any actual solution data
-    final hasAnswerChoice =
-        (crop.solutionMetadata?.answerChoice != null ||
-        crop.userSolution?.answerChoice != null);
-    final hasExplanation =
-        (crop.solutionMetadata?.explanation != null &&
-            crop.solutionMetadata!.explanation!.trim().isNotEmpty) ||
-        (crop.userSolution?.explanation != null &&
-            crop.userSolution!.explanation!.trim().isNotEmpty);
-    final hasDrawing =
-        (crop.solutionMetadata?.drawingFile != null &&
-            crop.solutionMetadata!.drawingFile!.trim().isNotEmpty) ||
-        (crop.userSolution?.drawingFile != null &&
-            crop.userSolution!.drawingFile!.trim().isNotEmpty);
-    final hasSolutionImages =
-        (crop.solutionMetadata?.solutionImages != null &&
-        crop.solutionMetadata!.solutionImages.isNotEmpty);
-    final hasAiSolution =
-        crop.solutionMetadata?.aiSolution != null ||
-        crop.userSolution?.aiSolution != null;
-
-    final hasSolution =
-        hasAnswerChoice ||
-        hasExplanation ||
-        hasDrawing ||
-        hasSolutionImages ||
-        hasAiSolution;
-
-    if (!hasSolution) {
-      return const SizedBox.shrink();
-    }
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: scheme.surface,
         border: Border(
-          top: BorderSide(color: Theme.of(context).dividerColor, width: 1),
+          left: BorderSide(color: scheme.outlineVariant, width: 1),
         ),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Header - Always visible
-          InkWell(
-            onTap: () {
-              setState(() {
-                _isAnswerExpanded = !_isAnswerExpanded;
-              });
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.check_circle,
-                    color: Colors.green.shade600,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Çözüm',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-                  ),
-                  const Spacer(),
-                  const SizedBox(width: 8),
-                  Icon(
-                    _isAnswerExpanded ? Icons.expand_less : Icons.expand_more,
-                    size: 24,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Expandable content
-          AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
-            secondChild: Container(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Answer choice (large) - check both metadata and userSolution
-                  if (crop.solutionMetadata?.answerChoice != null ||
-                      crop.userSolution?.answerChoice != null) ...[
-                    Center(
-                      child: Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primary.withValues(alpha: 0.3),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Center(
-                          child: Text(
-                            crop.solutionMetadata?.answerChoice ??
-                                crop.userSolution?.answerChoice ??
-                                '',
-                            style: TextStyle(
-                              fontSize: 48,
-                              fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.onPrimary,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  // Solution type badge
-                  if (crop.solutionMetadata?.solutionType != null) ...[
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        Chip(
-                          label: Text(
-                            _getSolutionTypeText(
-                              crop.solutionMetadata!.solutionType!,
-                            ),
-                          ),
-                          avatar: Icon(
-                            _getSolutionTypeIcon(
-                              crop.solutionMetadata!.solutionType!,
-                            ),
-                            size: 16,
-                          ),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        ...crop.solutionMetadata!.solvedBy.map(
-                          (method) => Chip(
-                            label: Text(_getMethodText(method)),
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // Manual explanation or drawing - check both metadata and userSolution
-                  if ((crop.userSolution?.explanation != null &&
-                          crop.userSolution!.explanation!.trim().isNotEmpty) ||
-                      (crop.solutionMetadata?.explanation != null &&
-                          crop.solutionMetadata!.explanation!
-                              .trim()
-                              .isNotEmpty) ||
-                      (crop.userSolution?.drawingFile != null &&
-                          crop.userSolution!.drawingFile!.trim().isNotEmpty) ||
-                      (crop.solutionMetadata?.drawingFile != null &&
-                          crop.solutionMetadata!.drawingFile!
-                              .trim()
-                              .isNotEmpty)) ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surface,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              _isSolutionExpanded = !_isSolutionExpanded;
+            });
+          },
+          child: rotate
+              ? Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    RotatedBox(
+                      quarterTurns: 3,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.person,
-                                size: 16,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                'Manuel Çözüm',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.primary,
-                                ),
-                              ),
-                            ],
+                          Icon(
+                            Icons.lightbulb_outline,
+                            color: scheme.primary,
+                            size: 20,
                           ),
-                          // Show explanation if exists
-                          if ((crop.userSolution?.explanation != null &&
-                                  crop.userSolution!.explanation!
-                                      .trim()
-                                      .isNotEmpty) ||
-                              (crop.solutionMetadata?.explanation != null &&
-                                  crop.solutionMetadata!.explanation!
-                                      .trim()
-                                      .isNotEmpty)) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              crop.userSolution?.explanation?.trim() ??
-                                  crop.solutionMetadata?.explanation?.trim() ??
-                                  '',
-                              style: const TextStyle(fontSize: 13),
-                            ),
-                          ],
-                          // Show drawing file image if exists
-                          if ((crop.userSolution?.drawingFile != null &&
-                                  crop.userSolution!.drawingFile!
-                                      .trim()
-                                      .isNotEmpty) ||
-                              (crop.solutionMetadata?.drawingFile != null &&
-                                  crop.solutionMetadata!.drawingFile!
-                                      .trim()
-                                      .isNotEmpty)) ...[
-                            const SizedBox(height: 12),
-                            const Divider(height: 1),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.draw,
-                                  size: 14,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.secondary,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Çizim',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.secondary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            FutureBuilder<Uint8List?>(
-                              future: _loadDrawingImage(
-                                crop.userSolution?.drawingFile ??
-                                    crop.solutionMetadata?.drawingFile ??
-                                    '',
-                              ),
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return const Center(
-                                    child: Padding(
-                                      padding: EdgeInsets.all(20),
-                                      child: CircularProgressIndicator(),
-                                    ),
-                                  );
-                                }
-
-                                if (snapshot.hasError ||
-                                    !snapshot.hasData ||
-                                    snapshot.data == null) {
-                                  return Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey.shade100,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.error_outline,
-                                          size: 16,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          'Çizim yüklenemedi',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }
-
-                                return Container(
-                                  constraints: const BoxConstraints(
-                                    maxHeight: 300,
-                                  ),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: Image.memory(
-                                      snapshot.data!,
-                                      fit: BoxFit.contain,
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-
-                  // AI Solution
-                  if (crop.userSolution?.aiSolution != null ||
-                      crop.solutionMetadata?.aiSolution != null) ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.purple.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Colors.purple.shade200,
-                          width: 1,
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.psychology,
-                                size: 16,
-                                color: Colors.purple.shade700,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                'AI Çözümü',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.purple.shade700,
-                                ),
-                              ),
-                              const Spacer(),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 2,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: _getConfidenceColor(
-                                    (crop.userSolution?.aiSolution ??
-                                            crop.solutionMetadata!.aiSolution!)
-                                        .confidence,
-                                  ).withValues(alpha: 0.2),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  '%${((crop.userSolution?.aiSolution ?? crop.solutionMetadata!.aiSolution!).confidence * 100).toInt()}',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold,
-                                    color: _getConfidenceColor(
-                                      (crop.userSolution?.aiSolution ??
-                                              crop
-                                                  .solutionMetadata!
-                                                  .aiSolution!)
-                                          .confidence,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
+                          const SizedBox(width: 8),
                           Text(
-                            (crop.userSolution?.aiSolution ??
-                                    crop.solutionMetadata!.aiSolution!)
-                                .reasoning,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                          if ((crop.userSolution?.aiSolution ??
-                                      crop.solutionMetadata!.aiSolution!)
-                                  .steps
-                                  .isNotEmpty &&
-                              (crop.userSolution?.aiSolution ??
-                                      crop.solutionMetadata!.aiSolution!)
-                                  .steps
-                                  .first
-                                  .isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            const Divider(height: 1),
-                            const SizedBox(height: 8),
-                            Text(
-                              'Adımlar:',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.purple.shade700,
-                              ),
+                            'Çözümü Göster',
+                            style: TextStyle(
+                              color: scheme.primary,
+                              fontWeight: FontWeight.w600,
                             ),
-                            const SizedBox(height: 4),
-                            ...(crop.userSolution?.aiSolution ??
-                                    crop.solutionMetadata!.aiSolution!)
-                                .steps
-                                .map(
-                                  (step) => Padding(
-                                    padding: const EdgeInsets.only(
-                                      bottom: 2,
-                                      left: 8,
-                                    ),
-                                    child: Text(
-                                      step,
-                                      style: const TextStyle(fontSize: 11),
-                                    ),
-                                  ),
-                                ),
-                          ],
+                          ),
                         ],
                       ),
                     ),
                   ],
-
-                  // Detailed Solution Button
-                  if (crop.userSolution?.hasAnimationData == true ||
-                      crop.userSolution?.drawingDataFile != null ||
-                      (crop.solutionMetadata?.solutionImages != null &&
-                          crop
-                              .solutionMetadata!
-                              .solutionImages
-                              .isNotEmpty)) ...[
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () {
-                          final zipDir = widget.zipFilePath != null
-                              ? File(widget.zipFilePath!).parent.path
-                              : '';
-                          showDialog(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (context) => SolutionDetailDialog(
-                              crop: crop,
-                              baseDirectory: zipDir,
-                              zipFilePath: widget.zipFilePath,
-                              zipBytes: widget.zipBytes,
-                            ),
-                          );
-                        },
-                        icon: Icon(
-                          (crop.userSolution?.hasAnimationData == true ||
-                                  crop.userSolution?.drawingDataFile != null)
-                              ? Icons.play_circle_outline
-                              : Icons.photo_library,
-                          size: 20,
-                        ),
-                        label: Text(
-                          (crop.userSolution?.hasAnimationData == true ||
-                                  crop.userSolution?.drawingDataFile != null)
-                              ? 'Animasyonlu Çözümü İzle'
-                              : 'Çözüm Resimlerini Göster',
-                        ),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.tertiary,
-                          foregroundColor: Theme.of(
-                            context,
-                          ).colorScheme.onTertiary,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.lightbulb_outline,
+                      color: scheme.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Çözümü Göster',
+                      style: TextStyle(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
-                ],
-              ),
-            ),
-            crossFadeState: _isAnswerExpanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 300),
-          ),
-        ],
+                ),
+        ),
       ),
     );
-  }
-
-  String _getSolutionTypeText(String type) {
-    switch (type) {
-      case 'manual':
-        return 'Manuel';
-      case 'ai':
-        return 'AI';
-      case 'mixed':
-        return 'Karma';
-      default:
-        return type;
-    }
-  }
-
-  IconData _getSolutionTypeIcon(String type) {
-    switch (type) {
-      case 'manual':
-        return Icons.edit;
-      case 'ai':
-        return Icons.psychology;
-      case 'mixed':
-        return Icons.merge_type;
-      default:
-        return Icons.help;
-    }
-  }
-
-  String _getMethodText(String method) {
-    switch (method) {
-      case 'manual':
-        return 'Manuel';
-      case 'ai':
-        return 'AI';
-      case 'drawing':
-        return 'Çizim';
-      default:
-        return method;
-    }
-  }
-
-  Color _getConfidenceColor(double confidence) {
-    if (confidence >= 0.8) return Colors.green;
-    if (confidence >= 0.6) return Colors.orange;
-    return Colors.red;
   }
 
   @override
@@ -3337,9 +2497,7 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                     child: Text(
                       _sortedCrops[_currentIndex].questionNumber != null
                           ? 'Soru ${_sortedCrops[_currentIndex].questionNumber}'
-                          : _sortedCrops[_currentIndex].imageFile
-                                .split('/')
-                                .last,
+                          : "Soru",
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -3380,80 +2538,252 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Left Side - Image
                   Expanded(
                     flex: 2,
-                    child: Column(
+                    child: Stack(
                       children: [
-                        Expanded(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            child: Center(
-                              key: ValueKey(_currentIndex),
-                              child: Image.memory(
-                                widget.imageList
-                                    .firstWhere(
-                                      (entry) =>
-                                          entry.key ==
-                                          _sortedCrops[_currentIndex].imageFile,
-                                    )
-                                    .value,
-                                fit: BoxFit.contain,
+                        Container(
+                          width: double.infinity,
+                          height: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.transparent,
+                            borderRadius: const BorderRadius.only(
+                              bottomLeft: Radius.circular(12),
+                            ),
+                          ),
+                          child: InteractiveViewer(
+                            minScale: 0.5,
+                            maxScale: 4.0,
+                            child: Image.memory(
+                              widget.imageList
+                                  .firstWhere(
+                                    (entry) =>
+                                        entry.key ==
+                                        _sortedCrops[_currentIndex].imageFile,
+                                  )
+                                  .value,
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
+                        // Whiteboard Toggle Button (Top Right of Image)
+                        Positioned(
+                          top: 16,
+                          right: 16,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _showWhiteboard = !_showWhiteboard;
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.surface.withOpacity(0.9),
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.2),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Icon(
+                                  _showWhiteboard
+                                      ? Icons.space_dashboard
+                                      : Icons.space_dashboard_outlined,
+                                  color: Theme.of(context).colorScheme.primary,
+                                  size: 24,
+                                ),
                               ),
                             ),
                           ),
                         ),
                         if (_sortedCrops.length > 1)
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.surface,
-                              borderRadius: const BorderRadius.only(
-                                bottomLeft: Radius.circular(12),
-                                bottomRight: Radius.circular(12),
+                          Positioned(
+                            bottom: 0,
+                            left: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              width: MediaQuery.of(context).size.width * 0.45,
+                              decoration: BoxDecoration(
+                                color: Colors.transparent,
+                                borderRadius: const BorderRadius.only(
+                                  bottomLeft: Radius.circular(12),
+                                  bottomRight: Radius.circular(12),
+                                ),
                               ),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                IconButton(
-                                  icon: const Icon(Icons.arrow_back_ios),
-                                  onPressed: _currentIndex > 0
-                                      ? () {
-                                          setState(() {
-                                            _currentIndex--;
-                                          });
-                                        }
-                                      : null,
-                                ),
-                                const SizedBox(width: 24),
-                                Text(
-                                  'Soru numarasına göre sıralı',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurface
-                                        .withValues(alpha: 0.6),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.arrow_back_ios),
+                                    onPressed: _currentIndex > 0
+                                        ? () {
+                                            setState(() {
+                                              _currentIndex--;
+                                            });
+                                          }
+                                        : null,
                                   ),
-                                ),
-                                const SizedBox(width: 24),
-                                IconButton(
-                                  icon: const Icon(Icons.arrow_forward_ios),
-                                  onPressed:
-                                      _currentIndex < _sortedCrops.length - 1
-                                      ? () {
-                                          setState(() {
-                                            _currentIndex++;
-                                          });
-                                        }
-                                      : null,
-                                ),
-                              ],
+                                  const SizedBox(width: 24),
+                                  Text(
+                                    'Soru numarasına göre sıralı',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurface
+                                          .withValues(alpha: 0.6),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 24),
+                                  IconButton(
+                                    icon: const Icon(Icons.arrow_forward_ios),
+                                    onPressed:
+                                        _currentIndex < _sortedCrops.length - 1
+                                        ? () {
+                                            setState(() {
+                                              _currentIndex++;
+                                            });
+                                          }
+                                        : null,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                       ],
                     ),
                   ),
+                  // Middle - Whiteboard (Conditional)
+                  if (_showWhiteboard)
+                    Expanded(
+                      flex: 2,
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          border: Border(
+                            left: BorderSide(
+                              color: Theme.of(context).dividerColor,
+                              width: 1,
+                            ),
+                            right: BorderSide(
+                              color: Theme.of(context).dividerColor,
+                              width: 1,
+                            ),
+                          ),
+                        ),
+                        child: Stack(
+                          children: [
+                            DrawableContentWidget(
+                              key: _whiteboardKey,
+                              toolNotifier: _whiteboardToolNotifier,
+                              isDrawingEnabled: true,
+                              child: Container(color: Colors.white),
+                            ),
+                            // Toolbar
+                            Positioned(
+                              top: 16,
+                              left: 16,
+                              right: 16,
+                              child: Center(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black87,
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(
+                                          alpha: 0.2,
+                                        ),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ValueListenableBuilder<ToolState>(
+                                    valueListenable: _whiteboardToolNotifier,
+                                    builder: (context, toolState, child) {
+                                      return Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          _buildToolButton(
+                                            icon: Icons.edit,
+                                            isSelected: toolState.pencil,
+                                            tooltip: 'Kalem',
+                                            onTap: () {
+                                              _whiteboardToolNotifier.value =
+                                                  toolState.copyWith(
+                                                    pencil: true,
+                                                    eraser: false,
+                                                  );
+                                            },
+                                          ),
+                                          const SizedBox(width: 4),
+                                          _buildToolButton(
+                                            icon: Icons.cleaning_services,
+                                            isSelected: toolState.eraser,
+                                            tooltip: 'Silgi',
+                                            onTap: () {
+                                              _whiteboardToolNotifier.value =
+                                                  toolState.copyWith(
+                                                    pencil: false,
+                                                    eraser: true,
+                                                  );
+                                            },
+                                          ),
+                                          Container(
+                                            width: 1,
+                                            height: 24,
+                                            color: Colors.white24,
+                                            margin: const EdgeInsets.symmetric(
+                                              horizontal: 4,
+                                            ),
+                                          ),
+                                          _buildColorPickerForWhiteboard(
+                                            toolState.color,
+                                          ),
+                                          Container(
+                                            width: 1,
+                                            height: 24,
+                                            color: Colors.white24,
+                                            margin: const EdgeInsets.symmetric(
+                                              horizontal: 4,
+                                            ),
+                                          ),
+                                          _buildToolButton(
+                                            icon: Icons.delete_forever,
+                                            isSelected: false,
+                                            tooltip: 'Temizle',
+                                            onTap: () {
+                                              _whiteboardKey.currentState
+                                                  ?.clearDrawing();
+                                            },
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   // Divider
                   VerticalDivider(
                     width: 1,
@@ -3462,20 +2792,40 @@ class _SwipeableImageDialogState extends State<_SwipeableImageDialog> {
                   ),
 
                   // Right Side - Solution Section (Toggle)
-                  if (_isAnswerExpanded)
+                  // Right Side - Solution Section (Toggle)
+                  if (_isSolutionExpanded)
                     Expanded(
                       flex: 1,
-                      child: Column(
-                        children: [_buildAnswerSectionHorizontal()],
+                      child: Stack(
+                        children: [
+                          SolutionPanel(
+                            crop: _sortedCrops[_currentIndex],
+                            zipFilePath: widget.zipFilePath,
+                            zipBytes: widget.zipBytes,
+                          ),
+                          // Close button for solution panel
+                          Positioned(
+                            top: 8,
+                            right: 8,
+                            child: IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () {
+                                setState(() {
+                                  _isSolutionExpanded = false;
+                                });
+                              },
+                              style: IconButton.styleFrom(
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.surface.withOpacity(0.8),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     )
                   else
-                    Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Center(
-                        child: _buildSolutionToggleButton(rotate: true),
-                      ),
-                    ),
+                    _buildSolutionToggleButton(rotate: true),
                 ],
               ),
             ),

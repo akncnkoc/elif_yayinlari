@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 import '../../core/extensions/pdf_viewer_controller_extensions.dart';
+import '../../models/crop_data.dart';
 import '../pdf_thumbnail.dart';
 
 class RightThumbnailSidebar extends StatelessWidget {
@@ -10,12 +11,15 @@ class RightThumbnailSidebar extends StatelessWidget {
   final int currentPage;
   final VoidCallback onClose;
 
+  final CropData? cropData;
+
   const RightThumbnailSidebar({
     super.key,
     required this.pdfController,
     required this.pdfDocument,
     required this.currentPage,
     required this.onClose,
+    this.cropData,
   });
 
   @override
@@ -94,11 +98,14 @@ class RightThumbnailSidebar extends StatelessWidget {
                   pdfController: pdfController,
                   pdfDocument: pdfDocument,
                   currentPage: currentPage,
-                  totalPages: pdfController.pagesCount ?? 0,
+                  totalPages: pdfController.isReady
+                      ? (pdfController.pagesCount ?? 0)
+                      : 0,
                   scrollDirection: Axis.vertical,
                   onPageSelected: (pageNumber) {
                     pdfController.jumpToPage(pageNumber);
                   },
+                  cropData: cropData,
                 ),
               ),
             ],

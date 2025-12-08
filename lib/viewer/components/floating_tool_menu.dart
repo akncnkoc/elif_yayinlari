@@ -15,7 +15,7 @@ class FloatingToolMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     return Positioned(
       right: 16,
-      bottom: 10,
+      top: 10,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: Material(

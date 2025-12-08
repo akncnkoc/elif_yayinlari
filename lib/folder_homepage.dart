@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:convert';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,7 +12,10 @@ import './dropbox/dropbox_service.dart';
 import './dropbox/models.dart';
 import './google_drive/google_drive_service.dart';
 import './google_drive/models.dart' as gdrive;
+
 import './models/crop_data.dart';
+import './models/downloaded_book.dart';
+import './services/book_storage_service.dart';
 import 'login_page.dart';
 import 'viewer/pdf_drawing_viewer_page.dart';
 
@@ -27,6 +29,7 @@ class FolderHomePage extends StatefulWidget {
 class _FolderHomePageState extends State<FolderHomePage> {
   DropboxService? dropboxService;
   GoogleDriveService? googleDriveService;
+  final BookStorageService _bookStorageService = BookStorageService();
   List<DropboxItem> folders = [];
   List<DropboxItem> pdfs = [];
   List<gdrive.DriveItem> driveItems =
@@ -39,7 +42,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
   bool showFolderBrowser = false;
   bool useDropbox = false;
   bool useGoogleDrive = false;
+  bool showMyBooks = false;
   bool showStorageSelection = true;
+  List<DownloadedBook> downloadedBooks = [];
 
   List<BreadcrumbItem> breadcrumbs = [
     BreadcrumbItem(name: 'Akilli Tahta Proje Demo', path: ''),
@@ -54,7 +59,15 @@ class _FolderHomePageState extends State<FolderHomePage> {
   @override
   void initState() {
     super.initState();
+    _loadDownloadedBooks();
     // Don't automatically load anything - let user choose storage type
+  }
+
+  Future<void> _loadDownloadedBooks() async {
+    final books = await _bookStorageService.getBooks();
+    setState(() {
+      downloadedBooks = books;
+    });
   }
 
   String get currentPath => breadcrumbs.last.path;
@@ -64,7 +77,17 @@ class _FolderHomePageState extends State<FolderHomePage> {
       showStorageSelection = false;
       useDropbox = false;
       useGoogleDrive = false;
+      showMyBooks = false;
       // Local files will be picked by user on-demand
+    });
+  }
+
+  void _selectMyBooks() {
+    setState(() {
+      showStorageSelection = false;
+      useDropbox = false;
+      useGoogleDrive = false;
+      showMyBooks = true;
     });
   }
 
@@ -84,6 +107,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
         showStorageSelection = false;
         useGoogleDrive = true;
         useDropbox = false;
+        showMyBooks = false;
         isLoading = false;
       });
     } catch (e) {
@@ -361,6 +385,71 @@ class _FolderHomePageState extends State<FolderHomePage> {
         showFolderBrowser = false;
       });
     } catch (e) {
+      print('ZipDecoder failed: $e');
+      // Fallback to system unzip (for LZMA/method 14 support)
+      if (Platform.isLinux || Platform.isMacOS) {
+        try {
+          final tempDir = await getTemporaryDirectory();
+          final extractDir = Directory(
+            '${tempDir.path}/extract_${DateTime.now().millisecondsSinceEpoch}',
+          );
+          await extractDir.create();
+
+          // Unzip specific files
+          final result = await Process.run('unzip', [
+            '-o', // overwrite
+            zipPath,
+            'original.pdf',
+            'crop_coordinates.json',
+            '-d',
+            extractDir.path,
+          ]);
+
+          if (result.exitCode != 0) {
+            throw Exception('Unzip command failed: ${result.stderr}');
+          }
+
+          final pdfFile = File('${extractDir.path}/original.pdf');
+          if (!await pdfFile.exists()) {
+            if (!mounted) return;
+            Navigator.of(context).pop();
+            _showError('original.pdf not found in the book file');
+            return;
+          }
+
+          CropData? cropData;
+          final jsonFile = File('${extractDir.path}/crop_coordinates.json');
+          if (await jsonFile.exists()) {
+            try {
+              final jsonString = await jsonFile.readAsString();
+              cropData = CropData.fromJsonString(jsonString);
+            } catch (e) {
+              print('Error parsing crop data: $e');
+            }
+          }
+
+          if (!mounted) return;
+          Navigator.of(context).pop();
+
+          setState(() {
+            openTabs.add(
+              OpenPdfTab(
+                pdfPath: pdfFile.path,
+                title: 'Kitap',
+                dropboxPath: null,
+                cropData: cropData,
+                zipFilePath: zipPath,
+              ),
+            );
+            currentTabIndex = openTabs.length - 1;
+            showFolderBrowser = false;
+          });
+          return;
+        } catch (unzipError) {
+          print('System unzip failed: $unzipError');
+        }
+      }
+
       if (!mounted) return;
       Navigator.of(context).pop();
       _showError('Failed to extract PDF from zip: $e');
@@ -931,6 +1020,10 @@ class _FolderHomePageState extends State<FolderHomePage> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    if (showMyBooks) {
+      return _buildMyBooksView();
+    }
+
     if (!useDropbox && !useGoogleDrive) {
       // For local mode, show empty state with "open file" button
       return Center(
@@ -1194,15 +1287,48 @@ class _FolderHomePageState extends State<FolderHomePage> {
                             children: [
                               // Main icon (folder or book)
                               Center(
-                                child: Icon(
-                                  isFolder
-                                      ? Icons.folder_rounded
-                                      : Icons.menu_book_rounded,
-                                  size: 40,
-                                  color: isFolder
-                                      ? Theme.of(context).colorScheme.tertiary
-                                      : Theme.of(context).colorScheme.primary,
-                                ),
+                                child: item.thumbnailLink != null
+                                    ? ClipRRect(
+                                        borderRadius:
+                                            const BorderRadius.vertical(
+                                              top: Radius.circular(14),
+                                            ),
+                                        child: Image.network(
+                                          item.thumbnailLink!,
+                                          fit: BoxFit.cover,
+                                          width: double.infinity,
+                                          height: double.infinity,
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                                return Icon(
+                                                  isFolder
+                                                      ? Icons.folder_rounded
+                                                      : Icons.menu_book_rounded,
+                                                  size: 40,
+                                                  color: isFolder
+                                                      ? Theme.of(
+                                                          context,
+                                                        ).colorScheme.tertiary
+                                                      : Theme.of(
+                                                          context,
+                                                        ).colorScheme.primary,
+                                                );
+                                              },
+                                        ),
+                                      )
+                                    : Icon(
+                                        isFolder
+                                            ? Icons.folder_rounded
+                                            : Icons.menu_book_rounded,
+                                        size: 40,
+                                        color: isFolder
+                                            ? Theme.of(
+                                                context,
+                                              ).colorScheme.tertiary
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.primary,
+                                      ),
                               ),
                               // Small badge
                               if (!isFolder)
@@ -1239,25 +1365,76 @@ class _FolderHomePageState extends State<FolderHomePage> {
                         ),
                       ),
 
-                      // Item name
+                      // Item name and actions
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 10,
                           vertical: 8,
                         ),
                         width: double.infinity,
-                        child: Text(
-                          item.name,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.onSurface,
-                            letterSpacing: -0.2,
-                            height: 1.2,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
-                          textAlign: TextAlign.center,
+                        child: Column(
+                          children: [
+                            Text(
+                              item.name,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Theme.of(context).colorScheme.onSurface,
+                                letterSpacing: -0.2,
+                                height: 1.2,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                              maxLines: 2,
+                              textAlign: TextAlign.center,
+                            ),
+                            if (!isFolder) ...[
+                              const SizedBox(height: 8),
+                              SizedBox(
+                                height: 28,
+                                width: double.infinity,
+                                child:
+                                    downloadedBooks.any((b) => b.id == item.id)
+                                    ? FilledButton.icon(
+                                        onPressed:
+                                            null, // Disabled if downloaded
+                                        icon: const Icon(
+                                          Icons.check_rounded,
+                                          size: 14,
+                                        ),
+                                        label: const Text(
+                                          'İndirildi',
+                                          style: TextStyle(fontSize: 10),
+                                        ),
+                                        style: FilledButton.styleFrom(
+                                          padding: EdgeInsets.zero,
+                                          backgroundColor: Colors.green,
+                                          disabledBackgroundColor: Colors.green
+                                              .withValues(alpha: 0.5),
+                                          disabledForegroundColor: Colors.white,
+                                        ),
+                                      )
+                                    : OutlinedButton.icon(
+                                        onPressed: () => _downloadBook(item),
+                                        icon: const Icon(
+                                          Icons.download_rounded,
+                                          size: 14,
+                                        ),
+                                        label: const Text(
+                                          'İndir',
+                                          style: TextStyle(fontSize: 10),
+                                        ),
+                                        style: OutlinedButton.styleFrom(
+                                          padding: EdgeInsets.zero,
+                                          side: BorderSide(
+                                            color: Theme.of(
+                                              context,
+                                            ).colorScheme.primary,
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ],
@@ -1502,6 +1679,234 @@ class _FolderHomePageState extends State<FolderHomePage> {
     );
   }
 
+  Widget _buildMyBooksView() {
+    if (downloadedBooks.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.library_books_outlined,
+              size: 64,
+              color: Theme.of(
+                context,
+              ).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Henüz indirilmiş kitap yok',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Google Drive\'dan kitap indirebilirsiniz',
+              style: TextStyle(
+                fontSize: 14,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton.icon(
+              onPressed: _selectGoogleDriveStorage,
+              icon: const Icon(Icons.cloud_download_rounded),
+              label: const Text('Google Drive\'a Git'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 6,
+        childAspectRatio: 0.75,
+        crossAxisSpacing: 16,
+        mainAxisSpacing: 16,
+      ),
+      itemCount: downloadedBooks.length,
+      itemBuilder: (context, index) {
+        final book = downloadedBooks[index];
+        return Card(
+          elevation: 2,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: InkWell(
+            onTap: () => _openDownloadedBook(book),
+            borderRadius: BorderRadius.circular(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.menu_book_rounded,
+                        size: 48,
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        book.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            '${(book.size / 1024 / 1024).toStringAsFixed(1)} MB',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () => _deleteBook(book),
+                            borderRadius: BorderRadius.circular(20),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                Icons.delete_outline_rounded,
+                                size: 18,
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _openDownloadedBook(DownloadedBook book) async {
+    await _handleZipFile(book.localPath, book.name);
+  }
+
+  Future<void> _deleteBook(DownloadedBook book) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Kitabı Sil'),
+        content: Text('${book.name} silinsin mi?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('İptal'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sil', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        final file = File(book.localPath);
+        if (await file.exists()) {
+          await file.delete();
+        }
+        await _bookStorageService.removeBook(book.id);
+        await _loadDownloadedBooks();
+      } catch (e) {
+        _showError('Silme hatası: $e');
+      }
+    }
+  }
+
+  Future<void> _downloadBook(gdrive.DriveItem item) async {
+    if (googleDriveService == null) return;
+
+    // Check if already downloaded
+    if (downloadedBooks.any((b) => b.id == item.id)) {
+      _showError('Bu kitap zaten indirilmiş.');
+      return;
+    }
+
+    setState(() => isLoading = true);
+
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final booksDir = Directory('${appDir.path}/books');
+      if (!await booksDir.exists()) {
+        await booksDir.create(recursive: true);
+      }
+
+      final fileName = item.name;
+      // Download to temp first
+      final tempFile = await googleDriveService!.downloadFile(
+        item.id,
+        fileName,
+      );
+
+      // Move file to permanent location
+      final newPath = '${booksDir.path}/$fileName';
+      await tempFile.copy(newPath);
+      await tempFile.delete(); // Delete temp file
+
+      final downloadedBook = DownloadedBook(
+        id: item.id,
+        name: item.name,
+        localPath: newPath,
+        size: item.size ?? 0,
+        downloadedAt: DateTime.now(),
+      );
+
+      await _bookStorageService.addBook(downloadedBook);
+      await _loadDownloadedBooks();
+
+      setState(() {
+        isLoading = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Kitap başarıyla indirildi'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => isLoading = false);
+      _showError('İndirme hatası: $e');
+    }
+  }
+
   Widget _buildStorageSelectionScreen() {
     return Center(
       child: Container(
@@ -1583,9 +1988,23 @@ class _FolderHomePageState extends State<FolderHomePage> {
               subtitle: '.book dosyalarını görüntüle',
               gradientColors: [
                 Theme.of(context).colorScheme.secondary,
-                Theme.of(context).colorScheme.tertiary,
+                Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
               ],
-              onTap: isLoading ? null : _selectGoogleDriveStorage,
+              onTap: _selectGoogleDriveStorage,
+            ),
+
+            const SizedBox(height: 12),
+
+            // My Books Card - Premium
+            _buildPremiumStorageCard(
+              icon: Icons.library_books_rounded,
+              title: 'Kitaplarım',
+              subtitle: 'İndirilen kitaplar',
+              gradientColors: [
+                Colors.orange,
+                Colors.orange.withValues(alpha: 0.7),
+              ],
+              onTap: _selectMyBooks,
             ),
 
             if (isLoading) ...[

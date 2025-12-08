@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:pdfrx/pdfrx.dart';
+import '../models/crop_data.dart';
 
 // Global thumbnail cache - PDF ID ve sayfa numarasına göre cache tutar
 class ThumbnailCache {
@@ -43,6 +44,7 @@ class PdfThumbnailList extends StatefulWidget {
   final int totalPages;
   final Function(int) onPageSelected;
   final Axis scrollDirection;
+  final CropData? cropData;
 
   const PdfThumbnailList({
     super.key,
@@ -52,6 +54,7 @@ class PdfThumbnailList extends StatefulWidget {
     required this.totalPages,
     required this.onPageSelected,
     this.scrollDirection = Axis.horizontal,
+    this.cropData,
   });
 
   @override
@@ -87,23 +90,30 @@ class _PdfThumbnailListState extends State<PdfThumbnailList> {
   void _scrollToCurrentPage() {
     if (!_scrollController.hasClients) return;
 
-    // Her thumbnail yaklaşık 102 piksel genişliğinde/yüksekliğinde (90 + 6*2 margin)
-    const double thumbnailSize = 102.0;
-    final double targetPosition = (widget.currentPage - 1) * thumbnailSize;
+    // Determine thumbnail size and padding based on scroll direction
+    final bool isVertical = widget.scrollDirection == Axis.vertical;
+    final double thumbnailSize = isVertical ? 140.0 : 106.0; // 90 + 16 margin
+    final double padding = isVertical ? 12.0 : 8.0;
 
-    // Ekran genişliğinin/yüksekliğinin ortasını hesapla
+    // Calculate the target position of the item's center
+    final double itemStart = padding + (widget.currentPage - 1) * thumbnailSize;
+    final double itemCenter = itemStart + (thumbnailSize / 2);
+
+    // Calculate screen center
     final double viewportDimension =
         _scrollController.position.viewportDimension;
     final double screenCenter = viewportDimension / 2;
 
-    // Thumbnail'ı ortaya getirmek için pozisyonu ayarla
-    final double centeredPosition =
-        targetPosition - screenCenter + (thumbnailSize / 2);
+    // Calculate the scroll position to center the item
+    final double targetScrollPosition = itemCenter - screenCenter;
 
-    // Scroll limitlerini kontrol et
+    // Clamp the scroll position
     final double maxScroll = _scrollController.position.maxScrollExtent;
     final double minScroll = _scrollController.position.minScrollExtent;
-    final double finalPosition = centeredPosition.clamp(minScroll, maxScroll);
+    final double finalPosition = targetScrollPosition.clamp(
+      minScroll,
+      maxScroll,
+    );
 
     _scrollController.animateTo(
       finalPosition,
@@ -164,6 +174,7 @@ class _PdfThumbnailListState extends State<PdfThumbnailList> {
                 pageNumber: pageNumber,
                 isCurrentPage: pageNumber == widget.currentPage,
                 onTap: () => widget.onPageSelected(pageNumber),
+                cropData: widget.cropData,
               );
 
               if (widget.scrollDirection == Axis.vertical) {
@@ -193,7 +204,10 @@ class PdfThumbnail extends StatefulWidget {
     required this.pageNumber,
     required this.isCurrentPage,
     required this.onTap,
+    this.cropData,
   });
+
+  final CropData? cropData;
 
   @override
   State<PdfThumbnail> createState() => _PdfThumbnailState();
@@ -366,7 +380,7 @@ class _PdfThumbnailState extends State<PdfThumbnail> {
                 ),
                 child: Center(
                   child: Text(
-                    '${widget.pageNumber}',
+                    _getLabel(),
                     style: TextStyle(
                       color: isSelected
                           ? colorScheme.onPrimary
@@ -385,5 +399,24 @@ class _PdfThumbnailState extends State<PdfThumbnail> {
         ),
       ),
     );
+  }
+
+  String _getLabel() {
+    if (widget.cropData == null) return '${widget.pageNumber}';
+
+    final crops = widget.cropData!.getCropsForPage(widget.pageNumber);
+    if (crops.isEmpty) return '${widget.pageNumber}';
+
+    // Find first crop with question number
+    final questionCrop = crops.firstWhere(
+      (c) => c.questionNumber != null,
+      orElse: () => crops.first,
+    );
+
+    if (questionCrop.questionNumber != null) {
+      return '${questionCrop.questionNumber}';
+    }
+
+    return '${widget.pageNumber}';
   }
 }

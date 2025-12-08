@@ -58,11 +58,11 @@ class GoogleDriveService {
       final fileList = await driveApi.files.list(
         q: query,
         spaces: 'drive',
-        $fields: 'files(id, name, mimeType, size)',
+        $fields: 'files(id, name, mimeType, size, thumbnailLink)',
         orderBy: 'folder,name',
       );
 
-      final items =
+      final allItems =
           fileList.files
               ?.map(
                 (file) => DriveItem.fromJson({
@@ -70,14 +70,61 @@ class GoogleDriveService {
                   'name': file.name,
                   'mimeType': file.mimeType,
                   'size': file.size,
+                  'thumbnailLink': file.thumbnailLink,
                 }),
               )
               .toList() ??
           [];
 
-      debugPrint('✅ Found ${items.length} items');
+      // Separate folders, books, and images
+      final folders = allItems.where((item) => item.isFolder).toList();
+      final books = allItems.where((item) => item.isBook).toList();
+      final images = allItems
+          .where(
+            (item) =>
+                !item.isFolder &&
+                !item.isBook &&
+                (item.mimeType?.startsWith('image/') ?? false),
+          )
+          .toList();
+
+      final List<DriveItem> result = [...folders];
+
+      // Match images to books
+      for (final book in books) {
+        final bookNameWithoutExt = book.name.replaceAll('.book', '');
+
+        // Find matching image (exact match or with _cover suffix)
+        final coverImage = images.firstWhere(
+          (img) {
+            final imgName = img.name.toLowerCase();
+            final targetName = bookNameWithoutExt.toLowerCase();
+            return imgName.startsWith(targetName);
+          },
+          orElse: () => DriveItem(id: '', name: '', isFolder: false), // Dummy
+        );
+
+        if (coverImage.id.isNotEmpty) {
+          result.add(
+            DriveItem(
+              id: book.id,
+              name: book.name,
+              isFolder: book.isFolder,
+              mimeType: book.mimeType,
+              size: book.size,
+              thumbnailLink: coverImage.thumbnailLink,
+            ),
+          );
+        } else {
+          result.add(book);
+        }
+      }
+
+      debugPrint(
+        '✅ Found ${result.length} items (folders + books with covers)',
+      );
       debugPrint('========================================');
-      return items;
+      return result;
     } catch (e) {
       debugPrint('❌ Error listing files: $e');
       debugPrint('========================================');
@@ -102,17 +149,18 @@ class GoogleDriveService {
         );
       }
 
-      // Search for files ending with .book
-      final query = "name contains '.book' and trashed = false";
+      // Search for files ending with .book OR images
+      final query =
+          "(name contains '.book' or mimeType contains 'image/') and trashed = false";
 
       final fileList = await driveApi.files.list(
         q: query,
         spaces: 'drive',
-        $fields: 'files(id, name, mimeType, size)',
+        $fields: 'files(id, name, mimeType, size, thumbnailLink)',
         orderBy: 'name',
       );
 
-      final items =
+      final allItems =
           fileList.files
               ?.map(
                 (file) => DriveItem.fromJson({
@@ -120,14 +168,50 @@ class GoogleDriveService {
                   'name': file.name,
                   'mimeType': file.mimeType,
                   'size': file.size,
+                  'thumbnailLink': file.thumbnailLink,
                 }),
               )
-              .where((item) => item.isBook)
               .toList() ??
           [];
 
-      debugPrint('✅ Found ${items.length} .book files');
-      return items;
+      final books = allItems.where((item) => item.isBook).toList();
+      final images = allItems.where((item) => !item.isBook).toList();
+
+      // Match images to books
+      final List<DriveItem> result = [];
+      for (final book in books) {
+        final bookNameWithoutExt = book.name.replaceAll('.book', '');
+
+        // Find matching image (exact match or with _cover suffix)
+        final coverImage = images.firstWhere(
+          (img) {
+            final imgName = img.name.toLowerCase();
+            final targetName = bookNameWithoutExt.toLowerCase();
+            return imgName.startsWith(targetName);
+          },
+          orElse: () => DriveItem(id: '', name: '', isFolder: false), // Dummy
+        );
+
+        if (coverImage.id.isNotEmpty) {
+          // Create a new DriveItem with the image's thumbnail
+          result.add(
+            DriveItem(
+              id: book.id,
+              name: book.name,
+              isFolder: book.isFolder,
+              mimeType: book.mimeType,
+              size: book.size,
+              thumbnailLink:
+                  coverImage.thumbnailLink, // Use cover image thumbnail
+            ),
+          );
+        } else {
+          result.add(book);
+        }
+      }
+
+      debugPrint('✅ Found ${result.length} .book files (with covers)');
+      return result;
     } catch (e) {
       debugPrint('❌ Error searching book files: $e');
       rethrow;

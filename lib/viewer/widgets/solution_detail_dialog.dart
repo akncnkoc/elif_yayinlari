@@ -303,7 +303,7 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
       '🔄 build() çağrıldı - _loadedSolutionImages.length: ${_loadedSolutionImages.length}',
     );
     return Dialog(
-      insetPadding: const EdgeInsets.all(16),
+      insetPadding: const EdgeInsets.all(64),
       child: Container(
         width: MediaQuery.of(context).size.width,
         height: MediaQuery.of(context).size.height * 0.9,

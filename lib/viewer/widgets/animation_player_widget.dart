@@ -85,7 +85,8 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
           }
           if (!mounted) return;
           setState(() {
-            _error = 'Animation data file not found in archive: ${widget.animationDataPath}';
+            _error =
+                'Animation data file not found in archive: ${widget.animationDataPath}';
             _isLoading = false;
           });
           return;
@@ -146,7 +147,8 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
   }
 
   void previousStep() {
-    if (_currentStep > -1) { // -1'e kadar geri gidebilir
+    if (_currentStep > -1) {
+      // -1'e kadar geri gidebilir
       setState(() {
         _currentStep--;
       });
@@ -163,24 +165,17 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (_error != null) {
       return Center(
-        child: Text(
-          _error!,
-          style: const TextStyle(color: Colors.red),
-        ),
+        child: Text(_error!, style: const TextStyle(color: Colors.red)),
       );
     }
 
     if (_animationData == null) {
-      return const Center(
-        child: Text('No animation data available'),
-      );
+      return const Center(child: Text('No animation data available'));
     }
 
     final canvasWidth = _animationData!.metadata.canvasSize.width;
@@ -213,10 +208,7 @@ class AnimationPainter extends CustomPainter {
   final AnimationData animationData;
   final int currentStep;
 
-  AnimationPainter({
-    required this.animationData,
-    required this.currentStep,
-  });
+  AnimationPainter({required this.animationData, required this.currentStep});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -300,11 +292,7 @@ class AnimationPainter extends CustomPainter {
       ..strokeWidth = circle.lineWidth
       ..style = PaintingStyle.stroke;
 
-    canvas.drawCircle(
-      Offset(circle.x, circle.y),
-      circle.radius,
-      paint,
-    );
+    canvas.drawCircle(Offset(circle.x, circle.y), circle.radius, paint);
   }
 
   void _drawText(Canvas canvas, DrawingText text) {

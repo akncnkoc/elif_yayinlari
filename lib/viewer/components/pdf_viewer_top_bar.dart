@@ -61,32 +61,6 @@ class PdfViewerTopBar extends StatelessWidget {
       child: Row(
         children: [
           // PDF İkonu
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: [
-                BoxShadow(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.primary.withValues(alpha: 0.1),
-                  blurRadius: 6,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-            ),
-            child: Icon(
-              Icons.picture_as_pdf_rounded,
-              color: Theme.of(context).colorScheme.primary,
-              size: 20,
-            ),
-          ),
           const SizedBox(width: 10),
           const Spacer(flex: 1),
 
