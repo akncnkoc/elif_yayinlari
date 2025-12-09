@@ -19,6 +19,9 @@ import './services/book_storage_service.dart';
 import 'login_page.dart';
 import 'viewer/pdf_drawing_viewer_page.dart';
 
+// Drawing Pen Launcher (Fatih Kalem tarzı)
+import 'services/drawing_pen_launcher.dart';
+
 class FolderHomePage extends StatefulWidget {
   const FolderHomePage({super.key});
 
@@ -2137,6 +2140,26 @@ class _FolderHomePageState extends State<FolderHomePage> {
         appBar: AppBar(
           title: const Text('Akilli Tahta Proje Demo'),
           actions: [
+            // Kalem Modu Butonu (Fatih Kalem tarzı)
+            IconButton(
+              tooltip: 'Çizim Kalemi',
+              icon: const Icon(Icons.edit_rounded),
+              onPressed: () async {
+                final success = await DrawingPenLauncher.launch();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        success
+                            ? '✅ Çizim kalemi başlatıldı'
+                            : '❌ Çizim kalemi başlatılamadı',
+                      ),
+                      duration: const Duration(seconds: 2),
+                    ),
+                  );
+                }
+              },
+            ),
             IconButton(
               tooltip: 'Çıkış Yap',
               icon: const Icon(Icons.logout),
