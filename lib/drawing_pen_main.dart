@@ -16,6 +16,7 @@ import 'overlay_drawing/modes/ruler_mode.dart';
 import 'overlay_drawing/modes/laser_pointer_mode.dart';
 import 'overlay_drawing/modes/grid_mode.dart';
 import 'overlay_drawing/modes/shapes_3d_mode.dart';
+import 'services/bluetooth_input_handler.dart';
 
 /// Fatih Kalem benzeri - Sistem genelinde çalışan çizim uygulaması
 ///
@@ -101,6 +102,90 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
   // Sürüklenebilir widget pozisyonları
   Offset _modeSelectorPosition = const Offset(16, 16);
   Offset _toolbarPosition = const Offset(80, 16);
+
+  // Bluetooth
+  final BluetoothInputHandler _bluetoothHandler = BluetoothInputHandler();
+  bool _bluetoothEnabled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initBluetooth();
+  }
+
+  @override
+  void dispose() {
+    _bluetoothHandler.stop();
+    super.dispose();
+  }
+
+  Future<void> _initBluetooth() async {
+    // Sadece Windows'ta Bluetooth'u başlat
+    if (!kIsWeb && Platform.isWindows) {
+      final started = await _bluetoothHandler.start(
+        serviceName: 'Drawing Pen Remote',
+      );
+
+      if (started) {
+        setState(() {
+          _bluetoothEnabled = true;
+        });
+
+        // Mouse/keyboard event handler'ları ayarla
+        _bluetoothHandler.onMouseMove = (position) {
+          // TODO: Absolute mouse pozisyonu
+          debugPrint('Mouse move: $position');
+        };
+
+        _bluetoothHandler.onMouseDelta = (delta) {
+          // TODO: Relative mouse hareketi (daha kullanışlı)
+          debugPrint('Mouse delta: $delta');
+        };
+
+        _bluetoothHandler.onMouseDown = (button) {
+          // TODO: Mouse button basıldı
+          debugPrint('Mouse down: $button');
+        };
+
+        _bluetoothHandler.onMouseUp = (button) {
+          // TODO: Mouse button bırakıldı
+          debugPrint('Mouse up: $button');
+        };
+
+        _bluetoothHandler.onKeyDown = (key) {
+          // TODO: Klavye tuşu basıldı
+          debugPrint('Key down: $key');
+          _handleRemoteKeyPress(key);
+        };
+      }
+    }
+  }
+
+  void _handleRemoteKeyPress(String key) {
+    // Klavye kısayolları
+    switch (key.toLowerCase()) {
+      case 'c':
+        // Clear canvas
+        _canvasKey.currentState?.clear();
+        break;
+      case 'z':
+        // Undo
+        _canvasKey.currentState?.undo();
+        break;
+      case 'e':
+        // Toggle eraser
+        setState(() {
+          _isEraser = !_isEraser;
+        });
+        break;
+      case 'q':
+        // Close app
+        if (!kIsWeb && Platform.isWindows) {
+          windowManager.close();
+        }
+        break;
+    }
+  }
 
   Widget _buildModeContent() {
     switch (_currentMode) {
@@ -234,6 +319,14 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
               ),
             ),
           ),
+
+          // Bluetooth status indicator (sağ üst köşe)
+          if (_bluetoothEnabled)
+            Positioned(
+              right: 16,
+              top: 16,
+              child: BluetoothStatusIndicator(handler: _bluetoothHandler),
+            ),
 
           // Sürüklenebilir toolbar (sadece kalem modunda)
           if (_currentMode == DrawingMode.pen)

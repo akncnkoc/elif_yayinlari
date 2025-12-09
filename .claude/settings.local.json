@@ -4,7 +4,17 @@
       "Bash(flutter analyze:*)",
       "Bash(flutter pub:*)",
       "Bash(flutter doctor:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(find:*)",
+      "Bash(flutter clean:*)",
+      "Bash(for file in /home/ican/Documents/repos/elif_yayinlari/lib/overlay_drawing/modes/{highlighter,text,ruler,magnifier,grid,spotlight,curtain}_mode.dart)",
+      "Bash(do)",
+      "Bash(if [ -f \"$file\" ])",
+      "Bash(then)",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(git add:*)",
+      "Bash(git rebase:*)"
     ],
     "deny": [],
     "ask": []
