@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -49,6 +50,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
   bool showStorageSelection = true;
   List<DownloadedBook> downloadedBooks = [];
 
+  Timer? _drawingPenMonitor;
+  bool _wasDrawingPenRunning = false;
+
   List<BreadcrumbItem> breadcrumbs = [
     BreadcrumbItem(name: 'Akilli Tahta Proje Demo', path: ''),
   ];
@@ -63,7 +67,36 @@ class _FolderHomePageState extends State<FolderHomePage> {
   void initState() {
     super.initState();
     _loadDownloadedBooks();
+    _startDrawingPenMonitoring();
     // Don't automatically load anything - let user choose storage type
+  }
+
+  @override
+  void dispose() {
+    _drawingPenMonitor?.cancel();
+    super.dispose();
+  }
+
+  void _startDrawingPenMonitoring() {
+    // Her 2 saniyede bir çizim kaleminin durumunu kontrol et
+    _drawingPenMonitor = Timer.periodic(const Duration(seconds: 2), (timer) async {
+      final isRunning = DrawingPenLauncher.isRunning;
+
+      // Çizim kalemi kapandıysa ve önceden çalışıyorsa
+      if (!isRunning && _wasDrawingPenRunning) {
+        _wasDrawingPenRunning = false;
+        // Ana uygulamayı geri getir ve fullscreen yap
+        if (!kIsWeb) {
+          await windowManager.show();
+          await windowManager.focus();
+          if (mounted) {
+            await _makeFullscreen();
+          }
+        }
+      } else if (isRunning) {
+        _wasDrawingPenRunning = true;
+      }
+    });
   }
 
   Future<void> _loadDownloadedBooks() async {

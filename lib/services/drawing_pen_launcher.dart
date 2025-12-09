@@ -1,13 +1,31 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:path/path.dart' as path;
+import 'package:window_manager/window_manager.dart';
 
 /// Çizim kalemi uygulamasını ayrı bir process olarak başlatır
 class DrawingPenLauncher {
   static Process? _process;
 
   /// Çizim kalemi açık mı?
-  static bool get isRunning => _process != null;
+  static bool get isRunning {
+    if (_process == null) return false;
+
+    // Process'in hala çalışıp çalışmadığını kontrol et
+    try {
+      // Windows'ta tasklist ile kontrol et
+      if (Platform.isWindows) {
+        final result = Process.runSync('tasklist', ['/FI', 'PID eq ${_process!.pid}']);
+        if (!result.stdout.toString().contains('${_process!.pid}')) {
+          _process = null;
+          return false;
+        }
+      }
+      return true;
+    } catch (e) {
+      _process = null;
+      return false;
+    }
+  }
 
   /// Desktop platformunda mı?
   static bool get isDesktop =>
@@ -31,31 +49,20 @@ class DrawingPenLauncher {
       List<String> arguments;
 
       if (Platform.isWindows) {
-        // Windows'ta build edilmiş executable kullan
-        final buildPath = path.join(
-          Directory.current.path,
-          'build',
-          'windows',
-          'x64',
-          'runner',
-          'Release',
-          'akilli_tahta_proje_demo.exe',
-        );
+        // Debug veya Release build edilmiş exe kullan
+        final debugPath = '${Directory.current.path}\\build\\windows\\x64\\runner\\Debug\\akilli_tahta_proje_demo.exe';
+        final releasePath = '${Directory.current.path}\\build\\windows\\x64\\runner\\Release\\akilli_tahta_proje_demo.exe';
 
-        if (File(buildPath).existsSync()) {
-          // Build edilmiş exe var, onu kullan
-          executable = buildPath;
+        if (File(debugPath).existsSync()) {
+          executable = debugPath;
+          arguments = ['--drawing-pen'];
+        } else if (File(releasePath).existsSync()) {
+          executable = releasePath;
           arguments = ['--drawing-pen'];
         } else {
-          // Development mode - flutter run kullan
-          executable = 'flutter';
-          arguments = [
-            'run',
-            '-d',
-            'windows',
-            '-t',
-            'lib/drawing_pen_main.dart',
-          ];
+          // Hiçbir exe bulunamadı
+          debugPrint('❌ Hiçbir exe bulunamadı. Önce uygulamayı build edin.');
+          return false;
         }
       } else if (Platform.isLinux) {
         executable = 'flutter';
@@ -88,6 +95,16 @@ class DrawingPenLauncher {
       );
 
       debugPrint('✅ Çizim kalemi başlatıldı (PID: ${_process!.pid})');
+
+      // Ana uygulamayı minimize et
+      if (!kIsWeb) {
+        // Önce fullscreen'den çık
+        await windowManager.setFullScreen(false);
+        // Sonra minimize et
+        await windowManager.minimize();
+        debugPrint('📦 Ana uygulama minimize edildi');
+      }
+
       return true;
     } catch (e) {
       debugPrint('❌ Çizim kalemi başlatılamadı: $e');

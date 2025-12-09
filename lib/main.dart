@@ -6,8 +6,15 @@ import 'package:window_manager/window_manager.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'login_page.dart';
 import 'folder_homepage.dart';
+import 'drawing_pen_main.dart' as drawing_pen;
 
-void main() async {
+void main(List<String> args) async {
+  // Eğer --drawing-pen argümanı varsa çizim kalemi uygulamasını başlat
+  if (args.contains('--drawing-pen')) {
+    return drawing_pen.main();
+  }
+
+  // Normal ana uygulama
   WidgetsFlutterBinding.ensureInitialized();
 
   SystemChrome.setEnabledSystemUIMode(
