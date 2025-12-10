@@ -1,101 +1,61 @@
 import 'dart:async';
-import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart';
+import 'bluetooth_server_process.dart';
 
 /// Native Bluetooth Server Service
-/// Windows, Linux, macOS platformlarında Bluetooth RFCOMM server çalıştırır
+/// Windows platformunda standalone Bluetooth server process kullanır
 class BluetoothServerService {
-  static const MethodChannel _channel = MethodChannel('com.elif.bluetooth_server');
-  static const EventChannel _eventChannel = EventChannel('com.elif.bluetooth_server/events');
+  final BluetoothServerProcess _bluetoothServer = BluetoothServerProcess();
 
   Stream<BluetoothEvent>? _eventStream;
-  bool _isServerRunning = false;
 
   /// Server çalışıyor mu?
-  bool get isRunning => _isServerRunning;
+  bool get isRunning => _bluetoothServer.isRunning;
 
   /// Bluetooth Server'ı başlat
-  ///
-  /// [serviceName]: Bluetooth servis adı (telefonda görünecek)
-  /// [serviceUuid]: Bluetooth servis UUID'si
   Future<bool> startServer({
     String serviceName = 'Drawing Pen Remote',
-    String serviceUuid = '00001101-0000-1000-8000-00805F9B34FB', // Standard Serial Port Profile UUID
+    String serviceUuid = '00001101-0000-1000-8000-00805F9B34FB',
   }) async {
-    try {
-      final result = await _channel.invokeMethod('startServer', {
-        'serviceName': serviceName,
-        'serviceUuid': serviceUuid,
-      });
-
-      _isServerRunning = result == true;
-      return _isServerRunning;
-    } on PlatformException catch (e) {
-      debugPrint('Bluetooth Server başlatılamadı: ${e.message}');
-      return false;
-    }
+    return await _bluetoothServer.startServer();
   }
 
   /// Bluetooth Server'ı durdur
   Future<void> stopServer() async {
-    try {
-      await _channel.invokeMethod('stopServer');
-      _isServerRunning = false;
-    } on PlatformException catch (e) {
-      debugPrint('Bluetooth Server durdurulamadı: ${e.message}');
-    }
+    _bluetoothServer.stopServer();
   }
 
   /// Bluetooth event stream'ini dinle
   Stream<BluetoothEvent> get eventStream {
-    _eventStream ??= _eventChannel.receiveBroadcastStream().map((event) {
-      return BluetoothEvent.fromMap(Map<String, dynamic>.from(event));
+    _eventStream ??= _bluetoothServer.events.map((event) {
+      return BluetoothEvent.fromMap(event);
     });
     return _eventStream!;
   }
 
   /// Client'a mesaj gönder
   Future<bool> sendMessage(String message) async {
-    try {
-      final result = await _channel.invokeMethod('sendMessage', {
-        'message': message,
-      });
-      return result == true;
-    } on PlatformException catch (e) {
-      debugPrint('Mesaj gönderilemedi: ${e.message}');
-      return false;
-    }
+    _bluetoothServer.sendMessage(message);
+    return true;
   }
 
   /// Bağlı client'ları kes
   Future<void> disconnectClients() async {
-    try {
-      await _channel.invokeMethod('disconnectClients');
-    } on PlatformException catch (e) {
-      debugPrint('Client bağlantısı kesilemedi: ${e.message}');
-    }
+    // TODO: Implement disconnect in standalone server
   }
 
   /// Bluetooth adapter durumunu kontrol et
   Future<bool> isBluetoothAvailable() async {
-    try {
-      final result = await _channel.invokeMethod('isBluetoothAvailable');
-      return result == true;
-    } on PlatformException catch (e) {
-      debugPrint('Bluetooth durumu kontrol edilemedi: ${e.message}');
-      return false;
-    }
+    return _bluetoothServer.isBluetoothAvailable();
   }
 
   /// Bluetooth adapter açık mı?
   Future<bool> isBluetoothEnabled() async {
-    try {
-      final result = await _channel.invokeMethod('isBluetoothEnabled');
-      return result == true;
-    } on PlatformException catch (e) {
-      debugPrint('Bluetooth durumu kontrol edilemedi: ${e.message}');
-      return false;
-    }
+    return _bluetoothServer.isBluetoothEnabled();
+  }
+
+  void dispose() {
+    _bluetoothServer.dispose();
   }
 }
 

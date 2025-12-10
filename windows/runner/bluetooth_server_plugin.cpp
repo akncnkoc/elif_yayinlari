@@ -184,7 +184,13 @@ bool BluetoothServerPlugin::StartServer(const std::string& service_name,
 
   service.dwSize = sizeof(service);
   service.lpServiceClassId = &service_guid;
-  service.lpszServiceInstanceName = const_cast<char*>(service_name_.c_str());
+
+  // Convert service name to wide string for Windows API
+  int len = MultiByteToWideChar(CP_UTF8, 0, service_name_.c_str(), -1, nullptr, 0);
+  std::vector<wchar_t> wide_name(len);
+  MultiByteToWideChar(CP_UTF8, 0, service_name_.c_str(), -1, wide_name.data(), len);
+
+  service.lpszServiceInstanceName = wide_name.data();
   service.dwNameSpace = NS_BTH;
 
   SOCKADDR_BTH service_addr = {};

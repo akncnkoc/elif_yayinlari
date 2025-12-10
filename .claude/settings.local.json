@@ -14,7 +14,11 @@
       "Bash(fi)",
       "Bash(done)",
       "Bash(git add:*)",
-      "Bash(git rebase:*)"
+      "Bash(git rebase:*)",
+      "Bash(flutter build:*)",
+      "Bash(dir:*)",
+      "Bash(flutter run:*)",
+      "Bash(start akilli_tahta_proje_demo.exe)"
     ],
     "deny": [],
     "ask": []

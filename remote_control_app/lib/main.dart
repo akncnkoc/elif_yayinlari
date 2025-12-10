@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:flutter_blue_classic/flutter_blue_classic.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -35,10 +36,10 @@ class BluetoothConnectionPage extends StatefulWidget {
 }
 
 class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
-  BluetoothDevice? _connectedDevice;
-  BluetoothCharacteristic? _writeCharacteristic;
+  final FlutterBlueClassic _bluetooth = FlutterBlueClassic(usesFineLocation: true);
+  BluetoothConnection? _connection;
   bool _isScanning = false;
-  List<ScanResult> _scanResults = [];
+  List<BluetoothDevice> _devices = [];
   StreamSubscription? _scanSubscription;
 
   @override
@@ -50,47 +51,77 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
   @override
   void dispose() {
     _scanSubscription?.cancel();
-    _connectedDevice?.disconnect();
+    _connection?.dispose();
     super.dispose();
   }
 
   Future<void> _checkBluetoothState() async {
-    final isSupported = await FlutterBluePlus.isSupported;
-    if (!isSupported) {
-      _showError('Bluetooth bu cihazda desteklenmiyor');
+    final isSupported = await _bluetooth.isSupported;
+    if (isSupported != true) {
+      _showError('Bluetooth desteklenmiyor');
       return;
     }
 
-    final state = await FlutterBluePlus.adapterState.first;
-    if (state != BluetoothAdapterState.on) {
+    final isEnabled = await _bluetooth.isEnabled;
+    if (isEnabled != true) {
       _showError('Lütfen Bluetooth\'u açın');
     }
   }
 
-  Future<void> _startScan() async {
+  Future<bool> _requestBluetoothPermissions() async {
+    // Android 12+ için Bluetooth izinleri
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.location,
+    ].request();
+
+    bool allGranted = statuses.values.every((status) => status.isGranted);
+
+    if (!allGranted) {
+      _showError('Bluetooth izinleri gerekli. Lütfen ayarlardan izin verin.');
+      return false;
+    }
+
+    return true;
+  }
+
+  Future<void> _startDiscovery() async {
     if (_isScanning) return;
+
+    // İzinleri kontrol et
+    if (!await _requestBluetoothPermissions()) {
+      return;
+    }
 
     setState(() {
       _isScanning = true;
-      _scanResults.clear();
+      _devices.clear();
     });
 
     try {
-      await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 10),
-        androidUsesFineLocation: true,
-      );
-
-      _scanSubscription = FlutterBluePlus.scanResults.listen((results) {
+      // Önce eşlenmiş cihazları al
+      final bondedDevices = await _bluetooth.bondedDevices;
+      if (bondedDevices != null) {
         setState(() {
-          _scanResults = results
-              .where((r) => r.device.platformName.isNotEmpty)
-              .toList();
+          _devices = bondedDevices;
         });
+      }
+
+      // Yeni cihaz taraması başlat
+      _bluetooth.startScan();
+
+      _scanSubscription = _bluetooth.scanResults.listen((device) {
+        if (!_devices.any((d) => d.address == device.address)) {
+          setState(() {
+            _devices.add(device);
+          });
+        }
       });
 
+      // 10 saniye sonra taramayı durdur
       await Future.delayed(const Duration(seconds: 10));
-      await FlutterBluePlus.stopScan();
+      _bluetooth.stopScan();
     } catch (e) {
       _showError('Tarama hatası: $e');
     } finally {
@@ -102,48 +133,46 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
 
   Future<void> _connectToDevice(BluetoothDevice device) async {
     try {
-      await device.connect(timeout: const Duration(seconds: 10));
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Bağlanıyor...'),
+            ],
+          ),
+        ),
+      );
 
-      final services = await device.discoverServices();
+      _connection = await _bluetooth.connect(device.address);
 
-      // Serial Port Profile UUID veya benzeri bir service ara
-      for (var service in services) {
-        for (var characteristic in service.characteristics) {
-          if (characteristic.properties.write || characteristic.properties.writeWithoutResponse) {
-            _writeCharacteristic = characteristic;
-            break;
-          }
-        }
-        if (_writeCharacteristic != null) break;
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
+
+      if (_connection == null) {
+        _showError('Bağlantı başarısız');
+        return;
       }
-
-      if (_writeCharacteristic == null) {
-        throw Exception('Yazılabilir characteristic bulunamadı');
-      }
-
-      setState(() {
-        _connectedDevice = device;
-      });
 
       // Remote control sayfasına geç
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => RemoteControlPage(
-              device: device,
-              characteristic: _writeCharacteristic!,
-            ),
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => RemoteControlPage(
+            device: device,
+            connection: _connection!,
           ),
-        ).then((_) {
-          device.disconnect();
-          setState(() {
-            _connectedDevice = null;
-            _writeCharacteristic = null;
-          });
-        });
-      }
+        ),
+      ).then((_) {
+        _connection?.dispose();
+        _connection = null;
+      });
     } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context); // Close loading dialog
       _showError('Bağlantı hatası: $e');
     }
   }
@@ -161,6 +190,17 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
       appBar: AppBar(
         title: const Text('Drawing Pen Remote'),
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.bluetooth),
+            onPressed: () async {
+              final isEnabled = await _bluetooth.isEnabled;
+              if (isEnabled == false) {
+                _bluetooth.turnOn();
+              }
+            },
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -173,9 +213,15 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 16),
                 ),
+                const SizedBox(height: 8),
+                const Text(
+                  '"Drawing Pen Remote" veya bilgisayar adını arayın',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.white70),
+                ),
                 const SizedBox(height: 16),
                 ElevatedButton.icon(
-                  onPressed: _isScanning ? null : _startScan,
+                  onPressed: _isScanning ? null : _startDiscovery,
                   icon: _isScanning
                       ? const SizedBox(
                           width: 16,
@@ -193,20 +239,25 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
           ),
           const Divider(),
           Expanded(
-            child: _scanResults.isEmpty
+            child: _devices.isEmpty
                 ? const Center(
                     child: Text('Cihaz bulunamadı.\n"Cihaz Ara" butonuna basın.'),
                   )
                 : ListView.builder(
-                    itemCount: _scanResults.length,
+                    itemCount: _devices.length,
                     itemBuilder: (context, index) {
-                      final result = _scanResults[index];
+                      final device = _devices[index];
                       return ListTile(
                         leading: const Icon(Icons.bluetooth),
-                        title: Text(result.device.platformName),
-                        subtitle: Text(result.device.remoteId.toString()),
-                        trailing: Text('${result.rssi} dBm'),
-                        onTap: () => _connectToDevice(result.device),
+                        title: Text(device.name ?? 'Bilinmeyen Cihaz'),
+                        subtitle: Text(device.address),
+                        trailing: device.bondState == BluetoothBondState.bonded
+                            ? const Chip(
+                                label: Text('Eşlenmiş', style: TextStyle(fontSize: 10)),
+                                backgroundColor: Colors.green,
+                              )
+                            : null,
+                        onTap: () => _connectToDevice(device),
                       );
                     },
                   ),
@@ -219,12 +270,12 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
 
 class RemoteControlPage extends StatefulWidget {
   final BluetoothDevice device;
-  final BluetoothCharacteristic characteristic;
+  final BluetoothConnection connection;
 
   const RemoteControlPage({
     super.key,
     required this.device,
-    required this.characteristic,
+    required this.connection,
   });
 
   @override
@@ -232,36 +283,73 @@ class RemoteControlPage extends StatefulWidget {
 }
 
 class _RemoteControlPageState extends State<RemoteControlPage> {
-  Future<void> _sendEvent(Map<String, dynamic> event) async {
+  bool _isConnected = true;
+  StreamSubscription? _connectionSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Listen for connection state
+    _connectionSubscription = widget.connection.input?.listen(
+      (_) {},
+      onDone: () {
+        if (mounted) {
+          setState(() => _isConnected = false);
+          _showError('Bağlantı kesildi');
+          Navigator.pop(context);
+        }
+      },
+      onError: (error) {
+        if (mounted) {
+          setState(() => _isConnected = false);
+          _showError('Bağlantı hatası: $error');
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _connectionSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _sendEvent(Map<String, dynamic> event) {
+    if (!_isConnected) return;
+
     try {
       final json = jsonEncode(event);
-      final bytes = utf8.encode(json);
-      await widget.characteristic.write(bytes, withoutResponse: true);
+      final message = '$json\n';
+      widget.connection.writeString(message);
     } catch (e) {
       debugPrint('Send error: $e');
+      _showError('Gönderme hatası: $e');
     }
   }
 
   void _handlePanUpdate(DragUpdateDetails details) {
-    // Relative mouse movement
+    // Relative mouse movement with sensitivity multiplier
+    const double sensitivity = 2.0; // Increase for faster movement
+    debugPrint('Pan update: dx=${details.delta.dx}, dy=${details.delta.dy}');
     _sendEvent({
       'type': 'mousedelta',
-      'deltaX': details.delta.dx,
-      'deltaY': details.delta.dy,
+      'deltaX': details.delta.dx * sensitivity,
+      'deltaY': details.delta.dy * sensitivity,
     });
   }
 
-  void _handleTapDown(TapDownDetails details) {
+  void _handleTap() {
+    // Send mouse click
     _sendEvent({
       'type': 'mousedown',
       'button': 0, // Left button
     });
-  }
-
-  void _handleTapUp(TapUpDetails details) {
-    _sendEvent({
-      'type': 'mouseup',
-      'button': 0,
+    Future.delayed(const Duration(milliseconds: 50), () {
+      _sendEvent({
+        'type': 'mouseup',
+        'button': 0,
+      });
     });
   }
 
@@ -278,15 +366,36 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
     });
   }
 
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Bağlı: ${widget.device.platformName}'),
+        title: Text('Bağlı: ${widget.device.name ?? "Bilinmeyen"}'),
         centerTitle: true,
+        backgroundColor: _isConnected ? null : Colors.red,
       ),
       body: Column(
         children: [
+          // Connection status
+          if (!_isConnected)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(8),
+              color: Colors.red,
+              child: const Text(
+                'Bağlantı kesildi',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+
           // Touchpad area
           Expanded(
             flex: 3,
@@ -298,9 +407,15 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
                 border: Border.all(color: Colors.blue, width: 2),
               ),
               child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanStart: (details) {
+                  // Start tracking
+                },
                 onPanUpdate: _handlePanUpdate,
-                onTapDown: _handleTapDown,
-                onTapUp: _handleTapUp,
+                onPanEnd: (details) {
+                  // End tracking
+                },
+                onTap: _handleTap,
                 child: const Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -359,7 +474,7 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
 
   Widget _buildButton(String label, String key, IconData icon, VoidCallback onPressed) {
     return ElevatedButton(
-      onPressed: onPressed,
+      onPressed: _isConnected ? onPressed : null,
       style: ElevatedButton.styleFrom(
         padding: const EdgeInsets.all(8),
         shape: RoundedRectangleBorder(

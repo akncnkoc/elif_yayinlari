@@ -3,7 +3,7 @@
 #include <optional>
 
 #include "flutter/generated_plugin_registrant.h"
-#include "bluetooth_server_plugin.h"
+// #include "bluetooth_server_plugin.h"  // TODO: Fix header conflicts
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -27,9 +27,10 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
 
-  // Register Bluetooth Server plugin
-  bluetooth_server::BluetoothServerPlugin::RegisterWithRegistrar(
-      flutter_controller_->engine()->GetRegistrarForPlugin("BluetoothServerPlugin"));
+  // Register Bluetooth Server plugin (disabled due to header conflicts)
+  // TODO: Implement Bluetooth using Dart FFI or separate process
+  // bluetooth_server::BluetoothServerPlugin::RegisterWithRegistrar(
+  //     flutter_controller_->engine()->GetRegistrarForPlugin("BluetoothServerPlugin"));
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
 

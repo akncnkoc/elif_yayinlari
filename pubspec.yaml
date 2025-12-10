@@ -30,6 +30,8 @@ dependencies:
   googleapis: ^13.2.0
   googleapis_auth: ^1.6.0
   vector_math: ^2.1.4
+  ffi: ^2.1.4
+  win32: ^5.15.0
 dev_dependencies:
   flutter_test:
     sdk: "flutter"

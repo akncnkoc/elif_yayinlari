@@ -7,10 +7,17 @@
 #include <flutter/event_channel.h>
 #include <flutter/event_stream_handler_functions.h>
 
-#include <windows.h>
+// Define WIN32_LEAN_AND_MEAN to exclude rarely-used services from Windows headers
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+
+// winsock2.h must be included before windows.h to avoid conflicts
 #include <winsock2.h>
 #include <ws2bth.h>
+#include <windows.h>
 #include <bluetoothapis.h>
+#include <rpc.h>
 #include <memory>
 #include <thread>
 #include <atomic>
