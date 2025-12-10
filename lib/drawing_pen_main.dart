@@ -97,7 +97,8 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
   double _strokeWidth = 3.0;
   bool _isEraser = false;
   final GlobalKey<DrawingCanvasState> _canvasKey = GlobalKey();
-  DrawingMode _currentMode = DrawingMode.pen; // Aktif mod
+  DrawingMode? _currentMode; // Aktif mod (null = hiçbir mod seçili değil)
+  bool _drawingEnabled = true; // Çizim modu açık/kapalı
 
   // Sürüklenebilir widget pozisyonları
   Offset _modeSelectorPosition = const Offset(16, 16);
@@ -187,21 +188,19 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
     }
   }
 
-  Widget _buildModeContent() {
-    switch (_currentMode) {
+  Widget? _buildModeContent() {
+    if (_currentMode == null) return null;
+
+    switch (_currentMode!) {
       case DrawingMode.pen:
-        return DrawingCanvas(
-          key: _canvasKey,
-          color: _selectedColor,
-          strokeWidth: _strokeWidth,
-          isEraser: _isEraser,
-        );
+        // Pen modu artık ayrı bir katmanda, buraya gelmeyecek
+        return null;
 
       case DrawingMode.highlighter:
         return HighlighterMode(
           onClose: () {
             setState(() {
-              _currentMode = DrawingMode.pen;
+              _currentMode = null;
             });
           },
         );
@@ -210,7 +209,7 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
         return TextMode(
           onClose: () {
             setState(() {
-              _currentMode = DrawingMode.pen;
+              _currentMode = null;
             });
           },
         );
@@ -219,7 +218,7 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
         return ShapesMode(
           onClose: () {
             setState(() {
-              _currentMode = DrawingMode.pen;
+              _currentMode = null;
             });
           },
         );
@@ -228,7 +227,7 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
         return Shapes3DMode(
           onClose: () {
             setState(() {
-              _currentMode = DrawingMode.pen;
+              _currentMode = null;
             });
           },
         );
@@ -237,7 +236,7 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
         return RulerMode(
           onClose: () {
             setState(() {
-              _currentMode = DrawingMode.pen;
+              _currentMode = null;
             });
           },
         );
@@ -246,7 +245,7 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
         return SpotlightMode(
           onClose: () {
             setState(() {
-              _currentMode = DrawingMode.pen;
+              _currentMode = null;
             });
           },
         );
@@ -255,7 +254,7 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
         return CurtainMode(
           onClose: () {
             setState(() {
-              _currentMode = DrawingMode.pen;
+              _currentMode = null;
             });
           },
         );
@@ -264,7 +263,7 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
         return LaserPointerMode(
           onClose: () {
             setState(() {
-              _currentMode = DrawingMode.pen;
+              _currentMode = null;
             });
           },
         );
@@ -273,7 +272,7 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
         return GridMode(
           onClose: () {
             setState(() {
-              _currentMode = DrawingMode.pen;
+              _currentMode = null;
             });
           },
         );
@@ -286,10 +285,22 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-          // Aktif mod içeriği
-          Positioned.fill(
-            child: _buildModeContent(),
-          ),
+          // Aktif mod içeriği (çizim hariç)
+          if (_buildModeContent() != null)
+            Positioned.fill(
+              child: _buildModeContent()!,
+            ),
+
+          // Çizim katmanı (her zaman en üstte, açık/kapalı toggle edilebilir)
+          if (_drawingEnabled)
+            Positioned.fill(
+              child: DrawingCanvas(
+                key: _canvasKey,
+                color: _selectedColor,
+                strokeWidth: _strokeWidth,
+                isEraser: _isEraser,
+              ),
+            ),
 
           // Sürüklenebilir mod seçici (her zaman görünür)
           Positioned(
@@ -300,7 +311,9 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
                 opacity: 0.8,
                 child: _ModeSelector(
                   currentMode: _currentMode,
+                  drawingEnabled: _drawingEnabled,
                   onModeChanged: (mode) {},
+                  onDrawingToggle: () {},
                 ),
               ),
               childWhenDragging: Container(),
@@ -311,9 +324,15 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
               },
               child: _ModeSelector(
                 currentMode: _currentMode,
+                drawingEnabled: _drawingEnabled,
                 onModeChanged: (mode) {
                   setState(() {
                     _currentMode = mode;
+                  });
+                },
+                onDrawingToggle: () {
+                  setState(() {
+                    _drawingEnabled = !_drawingEnabled;
                   });
                 },
               ),
@@ -328,8 +347,8 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
               child: BluetoothStatusIndicator(handler: _bluetoothHandler),
             ),
 
-          // Sürüklenebilir toolbar (sadece kalem modunda)
-          if (_currentMode == DrawingMode.pen)
+          // Sürüklenebilir toolbar (sadece çizim modu açıkken)
+          if (_drawingEnabled)
             Positioned(
               left: _toolbarPosition.dx,
               top: _toolbarPosition.dy,
@@ -400,12 +419,16 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
 
 /// Mod seçici widget
 class _ModeSelector extends StatelessWidget {
-  final DrawingMode currentMode;
-  final Function(DrawingMode) onModeChanged;
+  final DrawingMode? currentMode;
+  final bool drawingEnabled;
+  final Function(DrawingMode?) onModeChanged;
+  final VoidCallback onDrawingToggle;
 
   const _ModeSelector({
     required this.currentMode,
+    required this.drawingEnabled,
     required this.onModeChanged,
+    required this.onDrawingToggle,
   });
 
   @override
@@ -425,15 +448,48 @@ class _ModeSelector extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Mod butonları
-          ...DrawingMode.values.map((mode) {
+          // Çizim Modu Toggle Butonu (Özel)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Tooltip(
+              message: 'Çizim Modu ${drawingEnabled ? "Açık" : "Kapalı"}\n${DrawingMode.pen.description}',
+              child: IconButton(
+                onPressed: onDrawingToggle,
+                icon: Text(
+                  DrawingMode.pen.icon,
+                  style: const TextStyle(fontSize: 20),
+                ),
+                style: IconButton.styleFrom(
+                  backgroundColor: drawingEnabled
+                      ? Colors.green.withValues(alpha: 0.3)
+                      : Colors.grey.withValues(alpha: 0.2),
+                  side: drawingEnabled
+                      ? const BorderSide(color: Colors.green, width: 2)
+                      : null,
+                ),
+              ),
+            ),
+          ),
+
+          // Ayırıcı çizgi
+          const Divider(height: 8),
+
+          // Diğer mod butonları
+          ...DrawingMode.values.where((mode) => mode != DrawingMode.pen).map((mode) {
             final isSelected = mode == currentMode;
             return Padding(
               padding: const EdgeInsets.only(bottom: 4),
               child: Tooltip(
                 message: '${mode.name}\n${mode.description}',
                 child: IconButton(
-                  onPressed: () => onModeChanged(mode),
+                  onPressed: () {
+                    // Aynı modu tekrar seçerse kapat
+                    if (isSelected) {
+                      onModeChanged(null);
+                    } else {
+                      onModeChanged(mode);
+                    }
+                  },
                   icon: Text(
                     mode.icon,
                     style: const TextStyle(fontSize: 20),
