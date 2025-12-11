@@ -284,6 +284,8 @@ class RemoteControlPage extends StatefulWidget {
 
 class _RemoteControlPageState extends State<RemoteControlPage> {
   bool _isConnected = true;
+  bool _isDragging = false;
+  bool _isDrawingMode = false; // false = hareket modu, true = çizim modu
   StreamSubscription? _connectionSubscription;
 
   @override
@@ -328,10 +330,24 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
     }
   }
 
+  void _handlePanStart(DragStartDetails details) {
+    // Çizim modunda mouse tuşunu bas
+    if (_isDrawingMode) {
+      setState(() {
+        _isDragging = true;
+      });
+      _sendEvent({
+        'type': 'mousedown',
+        'button': 0, // Left button
+      });
+      debugPrint('Çizim başladı');
+    }
+  }
+
   void _handlePanUpdate(DragUpdateDetails details) {
-    // Relative mouse movement with sensitivity multiplier
+    // Her iki modda da mouse'u hareket ettir
     const double sensitivity = 2.0; // Increase for faster movement
-    debugPrint('Pan update: dx=${details.delta.dx}, dy=${details.delta.dy}');
+    debugPrint('Pan update: dx=${details.delta.dx}, dy=${details.delta.dy}, çizim modu=$_isDrawingMode');
     _sendEvent({
       'type': 'mousedelta',
       'deltaX': details.delta.dx * sensitivity,
@@ -339,8 +355,22 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
     });
   }
 
+  void _handlePanEnd(DragEndDetails details) {
+    // Çizim modunda mouse tuşunu bırak
+    if (_isDrawingMode && _isDragging) {
+      setState(() {
+        _isDragging = false;
+      });
+      _sendEvent({
+        'type': 'mouseup',
+        'button': 0,
+      });
+      debugPrint('Çizim bitti');
+    }
+  }
+
   void _handleTap() {
-    // Send mouse click
+    // Send mouse click (quick tap without drag)
     _sendEvent({
       'type': 'mousedown',
       'button': 0, // Left button
@@ -399,42 +429,93 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
           // Touchpad area
           Expanded(
             flex: 3,
-            child: Container(
-              margin: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade900,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.blue, width: 2),
-              ),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onPanStart: (details) {
-                  // Start tracking
-                },
-                onPanUpdate: _handlePanUpdate,
-                onPanEnd: (details) {
-                  // End tracking
-                },
-                onTap: _handleTap,
-                child: const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+            child: Column(
+              children: [
+                // Mod göstergesi ve toggle butonu
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Icon(Icons.touch_app, size: 48, color: Colors.white54),
-                      SizedBox(height: 8),
-                      Text(
-                        'Touchpad',
-                        style: TextStyle(color: Colors.white54, fontSize: 18),
+                      Row(
+                        children: [
+                          Icon(
+                            _isDrawingMode ? Icons.edit : Icons.mouse,
+                            color: _isDrawingMode ? Colors.green : Colors.blue,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _isDrawingMode ? 'Çizim Modu' : 'Hareket Modu',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: _isDrawingMode ? Colors.green : Colors.blue,
+                            ),
+                          ),
+                        ],
                       ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Parmağınızı sürükleyin',
-                        style: TextStyle(color: Colors.white38, fontSize: 12),
+                      ElevatedButton.icon(
+                        onPressed: _isConnected ? () {
+                          setState(() {
+                            _isDrawingMode = !_isDrawingMode;
+                          });
+                        } : null,
+                        icon: Icon(_isDrawingMode ? Icons.mouse : Icons.edit),
+                        label: Text(_isDrawingMode ? 'Hareket' : 'Çizim'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _isDrawingMode ? Colors.blue : Colors.green,
+                        ),
                       ),
                     ],
                   ),
                 ),
-              ),
+                // Touchpad
+                Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade900,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: _isDrawingMode ? Colors.green : Colors.blue,
+                        width: 2,
+                      ),
+                    ),
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onPanStart: _handlePanStart,
+                      onPanUpdate: _handlePanUpdate,
+                      onPanEnd: _handlePanEnd,
+                      onTap: _handleTap,
+                      child: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              _isDrawingMode ? Icons.edit : Icons.touch_app,
+                              size: 48,
+                              color: Colors.white54,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _isDrawingMode ? 'Çizim Modu' : 'Hareket Modu',
+                              style: const TextStyle(color: Colors.white54, fontSize: 18),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _isDrawingMode
+                                ? 'Basılı tutarak çizin'
+                                : 'Parmağınızı sürükleyin',
+                              style: const TextStyle(color: Colors.white38, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
 
