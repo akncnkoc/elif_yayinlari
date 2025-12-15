@@ -219,7 +219,12 @@ class GoogleDriveService {
   }
 
   // Download a file from Google Drive
-  Future<File> downloadFile(String fileId, String fileName) async {
+  Future<File> downloadFile(
+    String fileId,
+    String fileName, {
+    int? fileSize,
+    Function(double)? onProgress,
+  }) async {
     try {
       // Ensure service is initialized
       if (!_isInitialized) {
@@ -248,10 +253,13 @@ class GoogleDriveService {
       final filePath = '${tempDir.path}/$fileName';
       final file = File(filePath);
 
-      // Write bytes to file
+      // Write bytes to file with progress tracking
       final bytes = <int>[];
       await for (var chunk in media.stream) {
         bytes.addAll(chunk);
+        if (onProgress != null && fileSize != null && fileSize > 0) {
+          onProgress(bytes.length / fileSize);
+        }
       }
       await file.writeAsBytes(bytes);
 

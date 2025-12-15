@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -24,10 +25,34 @@ class GoogleDriveAuth {
     try {
       debugPrint('🔐 Initializing Google Drive service account auth...');
 
-      // Read service account credentials from assets
-      final credentialsJson = await rootBundle.loadString(
-        'service_account.json',
-      );
+      // Read service account credentials
+      String credentialsJson;
+      
+      if (kIsWeb) {
+        // Web: Load from assets
+        credentialsJson = await rootBundle.loadString('service_account.json');
+      } else {
+        // Desktop/Mobile: Try to load from executable directory first
+        try {
+          final exeDir = Platform.resolvedExecutable;
+          final exeDirPath = Directory(exeDir).parent.path;
+          final serviceAccountFile = File('$exeDirPath/service_account.json');
+          
+          if (await serviceAccountFile.exists()) {
+            debugPrint('📁 Loading service_account.json from: ${serviceAccountFile.path}');
+            credentialsJson = await serviceAccountFile.readAsString();
+          } else {
+            // Fallback to assets
+            debugPrint('⚠️ service_account.json not found in executable directory, trying assets...');
+            credentialsJson = await rootBundle.loadString('service_account.json');
+          }
+        } catch (e) {
+          // Fallback to assets if file reading fails
+          debugPrint('⚠️ Failed to load from file, trying assets: $e');
+          credentialsJson = await rootBundle.loadString('service_account.json');
+        }
+      }
+      
       final credentials = auth.ServiceAccountCredentials.fromJson(
         json.decode(credentialsJson),
       );

@@ -49,21 +49,17 @@ class DrawingPenLauncher {
       List<String> arguments;
 
       if (Platform.isWindows) {
-        // Debug veya Release build edilmiş exe kullan
-        final debugPath = '${Directory.current.path}\\build\\windows\\x64\\runner\\Debug\\akilli_tahta_proje_demo.exe';
-        final releasePath = '${Directory.current.path}\\build\\windows\\x64\\runner\\Release\\akilli_tahta_proje_demo.exe';
-
-        if (File(debugPath).existsSync()) {
-          executable = debugPath;
-          arguments = ['--drawing-pen'];
-        } else if (File(releasePath).existsSync()) {
-          executable = releasePath;
-          arguments = ['--drawing-pen'];
-        } else {
-          // Hiçbir exe bulunamadı
-          debugPrint('❌ Hiçbir exe bulunamadı. Önce uygulamayı build edin.');
-          return false;
-        }
+        // Ana executable'ı --drawing-pen argümanı ile çalıştır
+        final exeDir = Platform.resolvedExecutable;
+        final exeDirPath = Directory(exeDir).parent.path;
+        final mainExe = Platform.resolvedExecutable; // Şu anda çalışan exe
+        
+        // Ana exe'yi --drawing-pen ile çalıştır
+        executable = mainExe;
+        arguments = ['--drawing-pen'];
+        
+        debugPrint('📍 Ana executable: $mainExe');
+        debugPrint('📍 Arguments: --drawing-pen');
       } else if (Platform.isLinux) {
         executable = 'flutter';
         arguments = [
@@ -85,6 +81,7 @@ class DrawingPenLauncher {
       } else {
         return false;
       }
+
 
       debugPrint('🚀 Çizim kalemi başlatılıyor: $executable ${arguments.join(' ')}');
 

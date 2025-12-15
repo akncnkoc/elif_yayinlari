@@ -1,4 +1,3 @@
-/// Application-wide constants
 class AppConstants {
   AppConstants._();
 
@@ -12,13 +11,10 @@ class AppConstants {
   static const double swipeDistanceThreshold = 100.0;
 
   // Drawing settings
-  static const double minDrawingDistance =
-      0.1; // Very low for smooth, responsive drawing
-  static const double minHighlighterDistance =
-      0.3; // Low for smooth highlighting
+  static const double minDrawingDistance = 0.1;
+  static const double minHighlighterDistance = 0.3;
   static const double defaultStrokeWidth = 0.7;
-  static const double strokeSimplificationTolerance =
-      0.3; // Douglas-Peucker tolerance (lower = better quality, higher = more simplification)
+  static const double strokeSimplificationTolerance = 0.2;
 
   // History settings
   static const int maxHistorySteps = 50;

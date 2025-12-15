@@ -32,6 +32,7 @@ dependencies:
   vector_math: ^2.1.4
   ffi: ^2.1.4
   win32: ^5.15.0
+  msix: ^3.16.12
 dev_dependencies:
   flutter_test:
     sdk: "flutter"
@@ -41,5 +42,11 @@ flutter:
   assets:
     - service_account.json
 
-inno_build:
-  app_id: "b7005cc2-f2d5-4b12-9708-1588a796a837"
+msix_config:
+  display_name: Elif Yayınları
+  publisher_display_name: Elif Yayınları
+  identity_name: com.elif.yayinlari
+  msix_version: 1.0.0.0
+  logo_path: windows\runner\resources\app_icon.ico
+  capabilities: internetClient, privateNetworkClientServer
+  publisher: CN=Elif Yayınları

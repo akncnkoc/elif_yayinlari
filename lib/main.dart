@@ -9,58 +9,82 @@ import 'folder_homepage.dart';
 import 'drawing_pen_main.dart' as drawing_pen;
 
 void main(List<String> args) async {
-  // Eğer --drawing-pen argümanı varsa çizim kalemi uygulamasını başlat
-  if (args.contains('--drawing-pen')) {
-    return drawing_pen.main();
-  }
+  try {
+    print('🚀 Application starting...');
+    print('📍 Args: $args');
+    
+    // Eğer --drawing-pen argümanı varsa çizim kalemi uygulamasını başlat
+    if (args.contains('--drawing-pen')) {
+      print('🎨 Starting drawing pen mode');
+      return drawing_pen.main();
+    }
 
-  // Normal ana uygulama
-  WidgetsFlutterBinding.ensureInitialized();
+    // Normal ana uygulama
+    print('✅ Initializing Flutter binding...');
+    WidgetsFlutterBinding.ensureInitialized();
 
-  SystemChrome.setEnabledSystemUIMode(
-    SystemUiMode.immersiveSticky,
-    overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
-  );
-
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
-      systemNavigationBarColor: Colors.transparent,
-      systemNavigationBarIconBrightness: Brightness.dark,
-    ),
-  );
-
-  // Web'de window_manager kullanma
-  if (!kIsWeb && Platform.isWindows) {
-    await windowManager.ensureInitialized();
-
-    final primaryDisplay = await screenRetriever.getPrimaryDisplay();
-
-    final scaledWidth = primaryDisplay.size.width;
-    final scaledHeight = primaryDisplay.size.height;
-
-    final windowWidth = scaledWidth / 2;
-    final windowHeight = scaledHeight * 0.8;
-
-    WindowOptions windowOptions = WindowOptions(
-      size: Size(windowWidth, windowHeight),
-      minimumSize: Size(windowWidth * 0.8, windowHeight * 0.8),
-      center: true,
-      backgroundColor: Colors.transparent,
-      titleBarStyle: TitleBarStyle.hidden,
-      alwaysOnTop: false,
-      windowButtonVisibility: false,
-      fullScreen: true,
+    print('✅ Setting system UI mode...');
+    SystemChrome.setEnabledSystemUIMode(
+      SystemUiMode.immersiveSticky,
+      overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
     );
 
-    windowManager.waitUntilReadyToShow(windowOptions, () async {
-      await windowManager.show();
-      await windowManager.focus();
-    });
-  }
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+    );
 
-  runApp(const AkilliTahtaProjeDemo());
+    // Web'de window_manager kullanma
+    if (!kIsWeb && Platform.isWindows) {
+      try {
+        print('🪟 Initializing window manager...');
+        await windowManager.ensureInitialized();
+
+        print('📺 Getting primary display...');
+        final primaryDisplay = await screenRetriever.getPrimaryDisplay();
+
+        final scaledWidth = primaryDisplay.size.width;
+        final scaledHeight = primaryDisplay.size.height;
+
+        final windowWidth = scaledWidth / 2;
+        final windowHeight = scaledHeight * 0.8;
+
+        WindowOptions windowOptions = WindowOptions(
+          size: Size(windowWidth, windowHeight),
+          minimumSize: Size(windowWidth * 0.8, windowHeight * 0.8),
+          center: true,
+          backgroundColor: Colors.transparent,
+          titleBarStyle: TitleBarStyle.hidden,
+          alwaysOnTop: false,
+          windowButtonVisibility: false,
+          fullScreen: true,
+        );
+
+        print('✅ Window options configured, showing window...');
+        windowManager.waitUntilReadyToShow(windowOptions, () async {
+          await windowManager.show();
+          await windowManager.focus();
+          print('✅ Window shown and focused');
+        });
+      } catch (e, stackTrace) {
+        print('❌ Window manager error: $e');
+        print('Stack trace: $stackTrace');
+        // Continue anyway - app might still work without window manager
+      }
+    }
+
+    print('🎯 Running app...');
+    runApp(const AkilliTahtaProjeDemo());
+    print('✅ App launched successfully');
+  } catch (e, stackTrace) {
+    print('❌ FATAL ERROR in main(): $e');
+    print('Stack trace: $stackTrace');
+    rethrow;
+  }
 }
 
 class AkilliTahtaProjeDemo extends StatelessWidget {

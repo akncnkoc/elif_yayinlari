@@ -9,13 +9,12 @@ import 'package:window_manager/window_manager.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:archive/archive.dart';
 import 'package:path_provider/path_provider.dart';
-import './dropbox/dropbox_service.dart';
-import './dropbox/models.dart';
 import './google_drive/google_drive_service.dart';
 import './google_drive/models.dart' as gdrive;
 
 import './models/crop_data.dart';
 import './models/downloaded_book.dart';
+import './models/app_models.dart';
 import './services/book_storage_service.dart';
 import 'login_page.dart';
 import 'viewer/pdf_drawing_viewer_page.dart';
@@ -31,11 +30,8 @@ class FolderHomePage extends StatefulWidget {
 }
 
 class _FolderHomePageState extends State<FolderHomePage> {
-  DropboxService? dropboxService;
   GoogleDriveService? googleDriveService;
   final BookStorageService _bookStorageService = BookStorageService();
-  List<DropboxItem> folders = [];
-  List<DropboxItem> pdfs = [];
   List<gdrive.DriveItem> driveItems =
       []; // folders + .book files (changed from driveBooks)
   String? currentDriveFolderId; // current Drive folder (null = root)
@@ -44,18 +40,25 @@ class _FolderHomePageState extends State<FolderHomePage> {
   bool isLoading = false;
   bool isFullScreen = false;
   bool showFolderBrowser = false;
-  bool useDropbox = false;
   bool useGoogleDrive = false;
   bool showMyBooks = false;
   bool showStorageSelection = true;
   List<DownloadedBook> downloadedBooks = [];
+  
+  // Download progress tracking
+  Map<String, double> _downloadProgress = {};
+  Set<String> _downloadingBooks = {};
+  
+  // Download cancellation
+  Map<String, bool> _downloadCancelFlags = {};
+  
+  // Download queue management
+  List<gdrive.DriveItem> _downloadQueue = [];
+  static const int _maxConcurrentDownloads = 2;
 
   Timer? _drawingPenMonitor;
   bool _wasDrawingPenRunning = false;
 
-  List<BreadcrumbItem> breadcrumbs = [
-    BreadcrumbItem(name: 'Akilli Tahta Proje Demo', path: ''),
-  ];
   List<BreadcrumbItem> driveBreadcrumbs = [
     BreadcrumbItem(
       name: 'Ana Klasör',
@@ -106,12 +109,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
     });
   }
 
-  String get currentPath => breadcrumbs.last.path;
-
   void _selectLocalStorage() {
     setState(() {
       showStorageSelection = false;
-      useDropbox = false;
       useGoogleDrive = false;
       showMyBooks = false;
       // Local files will be picked by user on-demand
@@ -121,7 +121,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
   void _selectMyBooks() {
     setState(() {
       showStorageSelection = false;
-      useDropbox = false;
       useGoogleDrive = false;
       showMyBooks = true;
     });
@@ -142,7 +141,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
       setState(() {
         showStorageSelection = false;
         useGoogleDrive = true;
-        useDropbox = false;
         showMyBooks = false;
         isLoading = false;
       });
@@ -160,27 +158,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
     }
   }
 
-  Future<void> _loadFolder(String path) async {
-    if (dropboxService == null) return;
 
-    setState(() => isLoading = true);
-
-    try {
-      final items = await dropboxService!.listFolder(path);
-
-      final foldersList = items.where((item) => item.isFolder).toList();
-      final pdfsList = items.where((item) => item.isPdf).toList();
-
-      setState(() {
-        folders = foldersList;
-        pdfs = pdfsList;
-        isLoading = false;
-      });
-    } catch (e) {
-      setState(() => isLoading = false);
-      _showError('Failed to load folder: $e');
-    }
-  }
 
   Future<void> _loadGoogleDriveFolder(String? folderId) async {
     if (googleDriveService == null) return;
@@ -492,31 +470,11 @@ class _FolderHomePageState extends State<FolderHomePage> {
     }
   }
 
-  void _navigateToFolder(String folderPath, String folderName) {
-    setState(() {
-      breadcrumbs.add(BreadcrumbItem(name: folderName, path: folderPath));
-    });
-    _loadFolder(folderPath);
-  }
 
-  void _navigateToBreadcrumb(int index) {
-    if (index < breadcrumbs.length - 1) {
-      setState(() {
-        breadcrumbs = breadcrumbs.sublist(0, index + 1);
-      });
-      _loadFolder(breadcrumbs.last.path);
-    }
-  }
 
   void _openFolderBrowser() {
-    if (useDropbox) {
-      setState(() {
-        showFolderBrowser = true;
-      });
-    } else {
-      // For local mode, open file picker directly
-      _pickLocalPdf();
-    }
+    // For local mode, open file picker directly
+    _pickLocalPdf();
   }
 
   void _showError(String message) {
@@ -529,44 +487,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
     );
   }
 
-  Future<void> _openPdfFromDropbox(DropboxItem pdf) async {
-    if (dropboxService == null) return;
 
-    final existingIndex = openTabs.indexWhere(
-      (tab) => tab.dropboxPath == pdf.path,
-    );
-    if (existingIndex != -1) {
-      setState(() {
-        currentTabIndex = existingIndex;
-        showFolderBrowser = false;
-      });
-      return;
-    }
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
-
-    try {
-      final file = await dropboxService!.downloadFile(pdf.path);
-      if (!mounted) return;
-      Navigator.of(context).pop();
-
-      setState(() {
-        openTabs.add(
-          OpenPdfTab(pdfPath: file.path, title: 'Kitap', dropboxPath: pdf.path),
-        );
-        currentTabIndex = openTabs.length - 1;
-        showFolderBrowser = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      _showError('Failed to open PDF: $e');
-    }
-  }
 
   Future<void> _openBookFromGoogleDrive(gdrive.DriveItem book) async {
     if (googleDriveService == null) return;
@@ -624,102 +545,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
     });
   }
 
-  Widget _buildBreadcrumbs() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
-        border: Border(
-          bottom: BorderSide(
-            color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
-            width: 1,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
-                ],
-              ),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              Icons.folder_open_rounded,
-              size: 18,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (int i = 0; i < breadcrumbs.length; i++) ...[
-                    InkWell(
-                      onTap: () => _navigateToBreadcrumb(i),
-                      borderRadius: BorderRadius.circular(6),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 5,
-                        ),
-                        decoration: i == breadcrumbs.length - 1
-                            ? BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Theme.of(context).colorScheme.primary
-                                        .withValues(alpha: 0.12),
-                                    Theme.of(context).colorScheme.primary
-                                        .withValues(alpha: 0.06),
-                                  ],
-                                ),
-                                borderRadius: BorderRadius.circular(6),
-                              )
-                            : null,
-                        child: Text(
-                          breadcrumbs[i].name,
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: i == breadcrumbs.length - 1
-                                ? FontWeight.w600
-                                : FontWeight.w500,
-                            color: i == breadcrumbs.length - 1
-                                ? Theme.of(context).colorScheme.onSurface
-                                : Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (i < breadcrumbs.length - 1)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 3),
-                        child: Icon(
-                          Icons.chevron_right_rounded,
-                          size: 16,
-                          color: Theme.of(
-                            context,
-                          ).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-                        ),
-                      ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildDriveBreadcrumbs() {
     return Container(
@@ -1060,7 +885,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
       return _buildMyBooksView();
     }
 
-    if (!useDropbox && !useGoogleDrive) {
+    if (!useGoogleDrive) {
       // For local mode, show empty state with "open file" button
       return Center(
         child: Container(
@@ -1279,11 +1104,13 @@ class _FolderHomePageState extends State<FolderHomePage> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    gradient: LinearGradient(
-                      colors: [
+                child: Stack(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        gradient: LinearGradient(
+                          colors: [
                         Theme.of(context).colorScheme.surfaceContainerHighest,
                         Theme.of(context).colorScheme.surface,
                       ],
@@ -1450,7 +1277,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
                                         ),
                                       )
                                     : OutlinedButton.icon(
-                                        onPressed: () => _downloadBook(item),
+                                        onPressed: () => _startDownloadOrQueue(item),
                                         icon: const Icon(
                                           Icons.download_rounded,
                                           size: 14,
@@ -1476,6 +1303,65 @@ class _FolderHomePageState extends State<FolderHomePage> {
                     ],
                   ),
                 ),
+                    // Download progress overlay
+                    if (!isFolder && _downloadingBooks.contains(item.id))
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.75),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 60,
+                                height: 60,
+                                child: CircularProgressIndicator(
+                                  value: _downloadProgress[item.id] ?? 0.0,
+                                  strokeWidth: 4,
+                                  backgroundColor: Colors.white.withValues(alpha: 0.2),
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                '%${((_downloadProgress[item.id] ?? 0.0) * 100).toStringAsFixed(0)}',
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              const Text(
+                                'İndiriliyor...',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              // Cancel button
+                              OutlinedButton.icon(
+                                onPressed: () => _cancelDownload(item.id),
+                                icon: const Icon(Icons.close, size: 16),
+                                label: const Text('İptal'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: const BorderSide(color: Colors.white),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           );
@@ -1483,235 +1369,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
       );
     }
 
-    if (folders.isEmpty && pdfs.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.folder_off, size: 64, color: Colors.grey),
-              const SizedBox(height: 16),
-              const Text(
-                'Bu klasör boş',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Dropbox\'a dosya veya klasör ekleyin',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: () => _loadFolder(currentPath),
-                icon: const Icon(Icons.refresh),
-                label: const Text('Yenile'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 6,
-        childAspectRatio: 0.85,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: folders.length + pdfs.length,
-      itemBuilder: (context, index) {
-        if (index < folders.length) {
-          final folder = folders[index];
-          return MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              onTap: () => _navigateToFolder(folder.path, folder.name),
-              child: Card(
-                elevation: 2,
-                shadowColor: Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: 0.15),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    gradient: LinearGradient(
-                      colors: [
-                        Theme.of(context).colorScheme.surfaceContainerHighest,
-                        Theme.of(context).colorScheme.surface,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Theme.of(
-                                  context,
-                                ).colorScheme.primary.withValues(alpha: 0.1),
-                                Theme.of(
-                                  context,
-                                ).colorScheme.primary.withValues(alpha: 0.05),
-                              ],
-                            ),
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(14),
-                              topRight: Radius.circular(14),
-                            ),
-                          ),
-                          child: Center(
-                            child: Icon(
-                              Icons.folder_rounded,
-                              size: 40,
-                              color: Theme.of(context).colorScheme.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        width: double.infinity,
-                        child: Text(
-                          folder.name,
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.onSurface,
-                            letterSpacing: -0.2,
-                          ),
-                          textAlign: TextAlign.center,
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        } else {
-          final pdfIndex = index - folders.length;
-          final pdf = pdfs[pdfIndex];
-          return MouseRegion(
-            cursor: SystemMouseCursors.click,
-            child: GestureDetector(
-              onTap: () => _openPdfFromDropbox(pdf),
-              child: Card(
-                elevation: 2,
-                shadowColor: Theme.of(
-                  context,
-                ).colorScheme.secondary.withValues(alpha: 0.15),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    gradient: LinearGradient(
-                      colors: [
-                        Theme.of(context).colorScheme.surfaceContainerHighest,
-                        Theme.of(context).colorScheme.surface,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: Stack(
-                          children: [
-                            Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  colors: [
-                                    Theme.of(context).colorScheme.secondary
-                                        .withValues(alpha: 0.1),
-                                    Theme.of(context).colorScheme.secondary
-                                        .withValues(alpha: 0.05),
-                                  ],
-                                ),
-                                borderRadius: const BorderRadius.only(
-                                  topLeft: Radius.circular(14),
-                                  topRight: Radius.circular(14),
-                                ),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  Icons.picture_as_pdf_rounded,
-                                  size: 40,
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.secondary,
-                                ),
-                              ),
-                            ),
-                            // Dropbox cloud badge
-                            Positioned(
-                              top: 8,
-                              right: 8,
-                              child: Container(
-                                width: 24,
-                                height: 24,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF0061FF),
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: const Color(
-                                        0xFF0061FF,
-                                      ).withValues(alpha: 0.3),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ],
-                                ),
-                                child: const Icon(
-                                  Icons.cloud_rounded,
-                                  size: 12,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        width: double.infinity,
-                        child: Text(
-                          pdf.name.replaceAll('.book', ''),
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Theme.of(context).colorScheme.onSurface,
-                            letterSpacing: -0.2,
-                          ),
-                          textAlign: TextAlign.center,
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        }
-      },
+    // Default fallback - should never reach here
+    return const Center(
+      child: Text('Please select a storage option from the menu'),
     );
   }
 
@@ -1884,6 +1544,70 @@ class _FolderHomePageState extends State<FolderHomePage> {
     }
   }
 
+  void _cancelDownload(String bookId) {
+    print('🚫 Cancelling download for book: $bookId');
+    setState(() {
+      _downloadCancelFlags[bookId] = true;
+      _downloadingBooks.remove(bookId);
+      _downloadProgress.remove(bookId);
+    });
+    
+    // Show immediate feedback
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('İndirme iptal ediliyor...'),
+        duration: Duration(seconds: 1),
+        backgroundColor: Colors.orange,
+      ),
+    );
+    
+    // Process next in queue
+    _processQueue();
+  }
+
+  void _startDownloadOrQueue(gdrive.DriveItem item) {
+    print('📥 Download request for: ${item.name}');
+    print('📊 Current downloads: ${_downloadingBooks.length}');
+    print('📋 Queue length: ${_downloadQueue.length}');
+    
+    // Check if already in queue
+    if (_downloadQueue.any((i) => i.id == item.id)) {
+      _showError('Bu kitap zaten kuyrukta.');
+      return;
+    }
+
+    // If max concurrent downloads reached, add to queue
+    if (_downloadingBooks.length >= _maxConcurrentDownloads) {
+      print('⏸️ Max downloads reached, adding to queue');
+      setState(() {
+        _downloadQueue.add(item);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${item.name} indirme kuyruğuna eklendi'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      print('▶️ Starting download immediately');
+      _downloadBook(item);
+    }
+  }
+
+  void _processQueue() {
+    if (_downloadQueue.isNotEmpty &&
+        _downloadingBooks.length < _maxConcurrentDownloads) {
+      final nextItem = _downloadQueue.removeAt(0);
+      _downloadBook(nextItem);
+    }
+  }
+
+  void _removeFromQueue(String bookId) {
+    setState(() {
+      _downloadQueue.removeWhere((item) => item.id == bookId);
+    });
+  }
+
   Future<void> _downloadBook(gdrive.DriveItem item) async {
     if (googleDriveService == null) return;
 
@@ -1893,7 +1617,18 @@ class _FolderHomePageState extends State<FolderHomePage> {
       return;
     }
 
-    setState(() => isLoading = true);
+    // Check if already downloading
+    if (_downloadingBooks.contains(item.id)) {
+      _showError('Bu kitap zaten indiriliyor.');
+      return;
+    }
+
+    // Mark as downloading
+    setState(() {
+      _downloadingBooks.add(item.id);
+      _downloadProgress[item.id] = 0.0;
+      _downloadCancelFlags[item.id] = false;
+    });
 
     try {
       final appDir = await getApplicationDocumentsDirectory();
@@ -1903,11 +1638,33 @@ class _FolderHomePageState extends State<FolderHomePage> {
       }
 
       final fileName = item.name;
-      // Download to temp first
+      // Download to temp first with progress callback
       final tempFile = await googleDriveService!.downloadFile(
         item.id,
         fileName,
+        fileSize: item.size,
+        onProgress: (progress) {
+          // Check for cancellation
+          if (_downloadCancelFlags[item.id] == true) {
+            throw Exception('Download cancelled by user');
+          }
+          
+          if (mounted) {
+            setState(() {
+              _downloadProgress[item.id] = progress;
+            });
+          }
+        },
       );
+
+      // Check if cancelled before moving file
+      if (_downloadCancelFlags[item.id] == true) {
+        // Delete temp file
+        if (await tempFile.exists()) {
+          await tempFile.delete();
+        }
+        return;
+      }
 
       // Move file to permanent location
       final newPath = '${booksDir.path}/$fileName';
@@ -1925,10 +1682,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
       await _bookStorageService.addBook(downloadedBook);
       await _loadDownloadedBooks();
 
-      setState(() {
-        isLoading = false;
-      });
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1938,8 +1691,30 @@ class _FolderHomePageState extends State<FolderHomePage> {
         );
       }
     } catch (e) {
-      setState(() => isLoading = false);
-      _showError('İndirme hatası: $e');
+      if (e.toString().contains('cancelled')) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('İndirme iptal edildi'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      } else {
+        _showError('İndirme hatası: $e');
+      }
+    } finally {
+      // Remove from downloading state
+      if (mounted) {
+        setState(() {
+          _downloadingBooks.remove(item.id);
+          _downloadProgress.remove(item.id);
+          _downloadCancelFlags.remove(item.id);
+        });
+        
+        // Process next item in queue
+        _processQueue();
+      }
     }
   }
 
@@ -2256,9 +2031,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
-                      useDropbox
-                          ? Icons.cloud_rounded
-                          : useGoogleDrive
+                      useGoogleDrive
                           ? Icons.g_mobiledata_rounded
                           : Icons.folder_rounded,
                       color: Theme.of(context).colorScheme.primary,
@@ -2268,9 +2041,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
                   const SizedBox(width: 10),
                   Flexible(
                     child: Text(
-                      useDropbox
-                          ? 'Dropbox'
-                          : useGoogleDrive
+                      useGoogleDrive
                           ? 'Google Drive'
                           : 'Yerel Depo',
                       style: const TextStyle(
@@ -2305,9 +2076,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
                   Tooltip(
                     message: 'Yenile',
                     child: InkWell(
-                      onTap: () => useGoogleDrive
-                          ? _loadGoogleDriveFolder(currentDriveFolderId)
-                          : _loadFolder(currentPath),
+                      onTap: () => _loadGoogleDriveFolder(currentDriveFolderId),
                       borderRadius: BorderRadius.circular(20),
                       child: Container(
                         padding: const EdgeInsets.all(8),
@@ -2341,31 +2110,156 @@ class _FolderHomePageState extends State<FolderHomePage> {
             ),
           ),
         ),
-        body: Column(
+        body: Stack(
           children: [
-            if (openTabs.isNotEmpty) _buildTabBar(),
-            if ((openTabs.isEmpty || showFolderBrowser) &&
-                !isLoading &&
-                (useDropbox || useGoogleDrive))
-              useGoogleDrive ? _buildDriveBreadcrumbs() : _buildBreadcrumbs(),
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                child: openTabs.isEmpty || showFolderBrowser
-                    ? _buildGridView()
-                    : PdfDrawingViewerPage(
-                        key: ValueKey(openTabs[currentTabIndex].pdfPath),
-                        pdfPath: openTabs[currentTabIndex].pdfPath,
-                        onBack: () => closeTab(currentTabIndex),
-                        cropData: openTabs[currentTabIndex].cropData,
-                        zipFilePath: openTabs[currentTabIndex].zipFilePath,
-                        pdfBytes: openTabs[currentTabIndex].pdfBytes,
-                        zipBytes: openTabs[currentTabIndex].zipBytes,
-                      ),
-              ),
+            // Main content
+            Column(
+              children: [
+                if (openTabs.isNotEmpty) _buildTabBar(),
+                if ((openTabs.isEmpty || showFolderBrowser) &&
+                    !isLoading &&
+                    useGoogleDrive)
+                  _buildDriveBreadcrumbs(),
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeIn,
+                    child: openTabs.isEmpty || showFolderBrowser
+                        ? _buildGridView()
+                        : PdfDrawingViewerPage(
+                            key: ValueKey(openTabs[currentTabIndex].pdfPath),
+                            pdfPath: openTabs[currentTabIndex].pdfPath,
+                            onBack: () => closeTab(currentTabIndex),
+                            cropData: openTabs[currentTabIndex].cropData,
+                            zipFilePath: openTabs[currentTabIndex].zipFilePath,
+                            pdfBytes: openTabs[currentTabIndex].pdfBytes,
+                            zipBytes: openTabs[currentTabIndex].zipBytes,
+                          ),
+                  ),
+                ),
+              ],
             ),
+            // Download queue panel - right side
+            if (_downloadQueue.isNotEmpty)
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: Container(
+                  width: 280,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surface,
+                    border: Border(
+                      left: BorderSide(
+                        color: Theme.of(context).dividerColor,
+                        width: 1,
+                      ),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 10,
+                        offset: const Offset(-2, 0),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surfaceVariant,
+                          border: Border(
+                            bottom: BorderSide(
+                              color: Theme.of(context).dividerColor,
+                              width: 1,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.queue_rounded,
+                              size: 24,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'İndirme Kuyruğu',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                  color: Theme.of(context).colorScheme.onSurface,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () {
+                                setState(() {
+                                  _downloadQueue.clear();
+                                });
+                              },
+                              icon: const Icon(Icons.clear_all_rounded),
+                              tooltip: 'Tümünü Temizle',
+                              iconSize: 20,
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Queue items
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          itemCount: _downloadQueue.length,
+                          itemBuilder: (context, index) {
+                            final item = _downloadQueue[index];
+                            return Container(
+                              margin: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: ListTile(
+                                dense: true,
+                                leading: CircleAvatar(
+                                  radius: 16,
+                                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                                  child: Text(
+                                    '${index + 1}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                    ),
+                                  ),
+                                ),
+                                title: Text(
+                                  item.name.replaceAll('.book', ''),
+                                  style: const TextStyle(fontSize: 13),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.close, size: 18),
+                                  onPressed: () => _removeFromQueue(item.id),
+                                  tooltip: 'Kuyruktan Çıkar',
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
