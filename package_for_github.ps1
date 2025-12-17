@@ -35,11 +35,7 @@ New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
 Write-Host "  Release dosyaları kopyalanıyor..." -ForegroundColor Gray
 Copy-Item "$sourceDir\*" -Destination $tempDir -Recurse -Force
 
-# Service account ekle
-if (Test-Path "service_account.json") {
-    Write-Host "  service_account.json ekleniyor..." -ForegroundColor Gray
-    Copy-Item "service_account.json" -Destination $tempDir -Force
-}
+
 
 # Çizim Kalemi launcher ekle
 if (Test-Path "Cizim_Kalemi_Baslat.bat") {

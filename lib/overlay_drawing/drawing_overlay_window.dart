@@ -40,6 +40,8 @@ class _DrawingOverlayWindowState extends State<DrawingOverlayWindow> {
               selectedColor: _selectedColor,
               strokeWidth: _strokeWidth,
               isEraser: _isEraser,
+              isMouseMode: false, // Not used in this overlay
+              onMouseModeToggle: () {}, // Not used in this overlay
               onColorChanged: (color) {
                 setState(() {
                   _selectedColor = color;

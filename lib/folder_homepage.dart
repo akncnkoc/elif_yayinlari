@@ -27,7 +27,7 @@ import 'services/drawing_pen_launcher.dart';
 import 'access_codes.dart';
 import './services/recent_file_service.dart';
 import './models/recent_file.dart';
-
+import './widgets/keyboard_text_field.dart';
 
 class FolderHomePage extends StatefulWidget {
   const FolderHomePage({super.key});
@@ -40,7 +40,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
   GoogleDriveService? googleDriveService;
   final BookStorageService _bookStorageService = BookStorageService();
   final RecentFileService _recentFileService = RecentFileService();
-  
+
   List<RecentFile> recentFiles = [];
   List<gdrive.DriveItem> driveItems =
       []; // folders + .book files (changed from driveBooks)
@@ -54,20 +54,23 @@ class _FolderHomePageState extends State<FolderHomePage> {
   bool showMyBooks = false;
   bool showStorageSelection = true;
   List<DownloadedBook> downloadedBooks = [];
-  
+
   // Download progress tracking
   Map<String, double> _downloadProgress = {};
   Set<String> _downloadingBooks = {};
-  
+
   // Download cancellation
   Map<String, bool> _downloadCancelFlags = {};
-  
+
   // Download queue management
   List<gdrive.DriveItem> _downloadQueue = [];
   static const int _maxConcurrentDownloads = 2;
 
   Timer? _drawingPenMonitor;
   bool _wasDrawingPenRunning = false;
+
+  // Ekran klavyesi algılama
+  bool _isKeyboardVisible = false;
 
   List<BreadcrumbItem> driveBreadcrumbs = [
     BreadcrumbItem(
@@ -82,6 +85,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
     _loadDownloadedBooks();
     _loadRecentFiles();
     _startDrawingPenMonitoring();
+    _startKeyboardDetection();
     // Don't automatically load anything - let user choose storage type
   }
 
@@ -89,6 +93,60 @@ class _FolderHomePageState extends State<FolderHomePage> {
   void dispose() {
     _drawingPenMonitor?.cancel();
     super.dispose();
+  }
+
+  /// Ekran klavyesini düzenli olarak kontrol et
+  void _startKeyboardDetection() {
+    if (!kIsWeb && Platform.isWindows) {
+      // Her 500ms'de bir kontrol et
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _checkKeyboard();
+          _startKeyboardDetection();
+        }
+      });
+    }
+  }
+
+  /// Windows ekran klavyesinin açık olup olmadığını kontrol et
+  Future<void> _checkKeyboard() async {
+    if (!kIsWeb && Platform.isWindows) {
+      try {
+        // tasklist komutu ile ekran klavyesini kontrol et
+        final result = await Process.run('tasklist', [
+          '/FI',
+          'IMAGENAME eq TabTip.exe',
+        ]);
+
+        final bool keyboardOpen = result.stdout.toString().contains(
+          'TabTip.exe',
+        );
+
+        // Durum değiştiyse pencere ayarlarını güncelle (gerekirse)
+        if (keyboardOpen != _isKeyboardVisible) {
+          setState(() {
+            _isKeyboardVisible = keyboardOpen;
+          });
+
+          // Ana uygulamada tam ekran modundaysak ve klavye açılmışsa
+          // window'u geçici olarak arka planda tutabiliriz
+          if (isFullScreen) {
+            if (_isKeyboardVisible) {
+              // Klavye açıldı - ekranın üstte kalmamasını sağla
+              debugPrint('⌨️ Ekran klavyesi algılandı (Ana uygulama)');
+              // Ana uygulamada alwaysOnTop kullanmıyoruz ancak
+              // gerekirse burada ek ayarlar yapılabilir
+            } else {
+              // Klavye kapandı
+              debugPrint('⌨️ Ekran klavyesi kapandı (Ana uygulama)');
+            }
+          }
+        }
+      } catch (e) {
+        // Hata oluşursa sessizce devam et
+        debugPrint('Ekran klavyesi kontrolü hatası: $e');
+      }
+    }
   }
 
   Future<void> _loadRecentFiles() async {
@@ -111,7 +169,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
 
   void _startDrawingPenMonitoring() {
     // Her 2 saniyede bir çizim kaleminin durumunu kontrol et
-    _drawingPenMonitor = Timer.periodic(const Duration(seconds: 2), (timer) async {
+    _drawingPenMonitor = Timer.periodic(const Duration(seconds: 2), (
+      timer,
+    ) async {
       final isRunning = DrawingPenLauncher.isRunning;
 
       // Çizim kalemi kapandıysa ve önceden çalışıyorsa
@@ -163,8 +223,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
       barrierDismissible: true,
       builder: (context) => AlertDialog(
         title: const Text('Erişim Kodu'),
-        content: TextField(
+        content: KeyboardTextField(
           controller: codeController,
+          hintText: 'Lütfen erişim kodunuzu giriniz',
           decoration: const InputDecoration(
             hintText: 'Lütfen erişim kodunuzu giriniz',
             border: OutlineInputBorder(),
@@ -195,8 +256,45 @@ class _FolderHomePageState extends State<FolderHomePage> {
       builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
-    final configs = await AccessCodeService.verifyCode(result);
-    
+    List<ResourceConfig> configs = [];
+    try {
+      configs = await AccessCodeService.verifyCode(result);
+    } catch (e) {
+      if (mounted) Navigator.pop(context); // Close loading dialog
+      _showError('Doğrulama hatası/zaman aşımı! Test moduna geçiliyor...');
+
+      // FALLBACK: Load Main Folder
+      try {
+        if (googleDriveService == null) {
+          googleDriveService = GoogleDriveService();
+          await googleDriveService!.initialize();
+        }
+
+        setState(() {
+          driveBreadcrumbs = [
+            BreadcrumbItem(
+              name: 'Ana Klasör (Test)',
+              path: '1U8mbCEY2JzdDngZxL7RyxID5eh8MW2yR',
+            ),
+          ];
+        });
+
+        await _loadGoogleDriveFolder('1U8mbCEY2JzdDngZxL7RyxID5eh8MW2yR');
+
+        setState(() {
+          showStorageSelection = false;
+          useGoogleDrive = true;
+          showMyBooks = false;
+          isLoading = false;
+        });
+        return; // Exit here since we handled fallback
+      } catch (fallbackError) {
+        _showError('Test modu da başlatılamadı: $fallbackError');
+        setState(() => showStorageSelection = true);
+        return;
+      }
+    }
+
     // Close loading dialog
     if (mounted) Navigator.pop(context);
 
@@ -262,27 +360,28 @@ class _FolderHomePageState extends State<FolderHomePage> {
       if (selectedConfig.type == ResourceType.file) {
         // --- FILE ACCESS MODE ---
         // Directly open the book without showing folder browser
-        
+
         setState(() {
-          // Hide storage selection but don't set useGoogleDrive=true yet 
+          // Hide storage selection but don't set useGoogleDrive=true yet
           // because we are just opening a file, not browsing drive
           showStorageSelection = false;
           // We can set these to false to show the PDF viewer
-          useGoogleDrive = false; 
-          showMyBooks = false; 
+          useGoogleDrive = false;
+          showMyBooks = false;
           isLoading = false;
         });
 
         // Create a dummy items object since we have the ID to download
         final dummyItem = DriveItem(
           id: selectedConfig.id,
-          name: selectedConfig.name.endsWith('.book') ? selectedConfig.name : '${selectedConfig.name}.book', // Ensure extension for logic
+          name: selectedConfig.name.endsWith('.book')
+              ? selectedConfig.name
+              : '${selectedConfig.name}.book', // Ensure extension for logic
           mimeType: 'application/zip', // .book is a zip
           isFolder: false,
         );
 
         await _openBookFromGoogleDrive(dummyItem);
-        
       } else {
         // --- FOLDER ACCESS MODE ---
         // Configure breadcrumbs for restricted view
@@ -294,7 +393,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
 
         // Load specific folder
         await _loadGoogleDriveFolder(selectedConfig.id);
-        
+
         setState(() {
           showStorageSelection = false;
           useGoogleDrive = true;
@@ -302,12 +401,50 @@ class _FolderHomePageState extends State<FolderHomePage> {
           isLoading = false;
         });
       }
-
     } catch (e) {
       setState(() => isLoading = false);
-      _showError('Hata: $e');
-      // Show selection again on error
-      setState(() => showStorageSelection = true);
+
+      // Show error briefly
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Bağlantı hatası: $e\nTest moduna geçiliyor (Ana Klasör)...',
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+
+      // FALLBACK: Load Main Folder
+      try {
+        if (googleDriveService == null) {
+          googleDriveService = GoogleDriveService();
+          await googleDriveService!.initialize();
+        }
+
+        setState(() {
+          driveBreadcrumbs = [
+            BreadcrumbItem(
+              name: 'Ana Klasör (Test)',
+              path: '1U8mbCEY2JzdDngZxL7RyxID5eh8MW2yR',
+            ),
+          ];
+        });
+
+        await _loadGoogleDriveFolder('1U8mbCEY2JzdDngZxL7RyxID5eh8MW2yR');
+
+        setState(() {
+          showStorageSelection = false;
+          useGoogleDrive = true;
+          showMyBooks = false;
+          isLoading = false;
+        });
+      } catch (fallbackError) {
+        _showError('Test modu da başlatılamadı: $fallbackError');
+        setState(() => showStorageSelection = true);
+      }
     }
   }
 
@@ -318,8 +455,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
       await windowManager.setFullScreen(isFullScreen);
     }
   }
-
-
 
   Future<void> _loadGoogleDriveFolder(String? folderId) async {
     if (googleDriveService == null) return;
@@ -390,34 +525,35 @@ class _FolderHomePageState extends State<FolderHomePage> {
           // Check if already recent or ask
           final isRecent = await _recentFileService.isFileRecent(filePath);
           if (!isRecent) {
-             // Ask user
-             final shouldAdd = await showDialog<bool>(
-               context: context,
-               builder: (context) => AlertDialog(
-                 title: const Text('Kısayol Ekle'),
-                 content: const Text(
-                     'Bu kitabı "Son Açılanlar" listesine eklemek ister misiniz? Böylece dosyayı tekrar aramak zorunda kalmazsınız.'),
-                 actions: [
-                   TextButton(
-                     onPressed: () => Navigator.pop(context, false),
-                     child: const Text('Hayır'),
-                   ),
-                   FilledButton(
-                     onPressed: () => Navigator.pop(context, true),
-                     child: const Text('Evet'),
-                   ),
-                 ],
-               ),
-             );
+            // Ask user
+            final shouldAdd = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: const Text('Kısayol Ekle'),
+                content: const Text(
+                  'Bu kitabı "Son Açılanlar" listesine eklemek ister misiniz? Böylece dosyayı tekrar aramak zorunda kalmazsınız.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Hayır'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('Evet'),
+                  ),
+                ],
+              ),
+            );
 
-             if (shouldAdd == true) {
-               await _addRecentFile(filePath, fileName);
-             }
+            if (shouldAdd == true) {
+              await _addRecentFile(filePath, fileName);
+            }
           } else {
-             // Already in list, just update timestamp/order
-             await _addRecentFile(filePath, fileName);
+            // Already in list, just update timestamp/order
+            await _addRecentFile(filePath, fileName);
           }
-          
+
           await _handleZipFile(filePath, fileName);
         } else {
           // It's a PDF file
@@ -662,8 +798,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
     }
   }
 
-
-
   void _openFolderBrowser() {
     // For local mode, open file picker directly
     _pickLocalPdf();
@@ -678,8 +812,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
       ),
     );
   }
-
-
 
   Future<void> _openBookFromGoogleDrive(gdrive.DriveItem book) async {
     if (googleDriveService == null) return;
@@ -736,7 +868,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
       }
     });
   }
-
 
   Widget _buildDriveBreadcrumbs() {
     return Container(
@@ -1303,198 +1434,210 @@ class _FolderHomePageState extends State<FolderHomePage> {
                         borderRadius: BorderRadius.circular(14),
                         gradient: LinearGradient(
                           colors: [
-                        Theme.of(context).colorScheme.surfaceContainerHighest,
-                        Theme.of(context).colorScheme.surface,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      // Icon container with gradient
-                      Expanded(
-                        child: Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: isFolder
-                                  ? [
-                                      Theme.of(context).colorScheme.tertiary
-                                          .withValues(alpha: 0.1),
-                                      Theme.of(context).colorScheme.tertiary
-                                          .withValues(alpha: 0.05),
-                                    ]
-                                  : [
-                                      Theme.of(context).colorScheme.primary
-                                          .withValues(alpha: 0.1),
-                                      Theme.of(context).colorScheme.secondary
-                                          .withValues(alpha: 0.05),
-                                    ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(14),
-                              topRight: Radius.circular(14),
-                            ),
-                          ),
-                          child: Stack(
-                            children: [
-                              // Main icon (folder or book)
-                              Center(
-                                child: item.thumbnailLink != null
-                                    ? ClipRRect(
-                                        borderRadius:
-                                            const BorderRadius.vertical(
-                                              top: Radius.circular(14),
-                                            ),
-                                        child: Image.network(
-                                          item.thumbnailLink!,
-                                          fit: BoxFit.cover,
-                                          width: double.infinity,
-                                          height: double.infinity,
-                                          errorBuilder:
-                                              (context, error, stackTrace) {
-                                                return Icon(
-                                                  isFolder
-                                                      ? Icons.folder_rounded
-                                                      : Icons.menu_book_rounded,
-                                                  size: 40,
-                                                  color: isFolder
-                                                      ? Theme.of(
-                                                          context,
-                                                        ).colorScheme.tertiary
-                                                      : Theme.of(
-                                                          context,
-                                                        ).colorScheme.primary,
-                                                );
-                                              },
-                                        ),
-                                      )
-                                    : Icon(
-                                        isFolder
-                                            ? Icons.folder_rounded
-                                            : Icons.menu_book_rounded,
-                                        size: 40,
-                                        color: isFolder
-                                            ? Theme.of(
-                                                context,
-                                              ).colorScheme.tertiary
-                                            : Theme.of(
-                                                context,
-                                              ).colorScheme.primary,
-                                      ),
-                              ),
-                              // Small badge
-                              if (!isFolder)
-                                Positioned(
-                                  top: 8,
-                                  right: 8,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.secondary,
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Theme.of(context)
+                            Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
+                            Theme.of(context).colorScheme.surface,
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          // Icon container with gradient
+                          Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: isFolder
+                                      ? [
+                                          Theme.of(context).colorScheme.tertiary
+                                              .withValues(alpha: 0.1),
+                                          Theme.of(context).colorScheme.tertiary
+                                              .withValues(alpha: 0.05),
+                                        ]
+                                      : [
+                                          Theme.of(context).colorScheme.primary
+                                              .withValues(alpha: 0.1),
+                                          Theme.of(context)
                                               .colorScheme
                                               .secondary
-                                              .withValues(alpha: 0.3),
-                                          blurRadius: 4,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ],
-                                    ),
-                                    child: const Icon(
-                                      Icons.cloud_rounded,
-                                      size: 12,
-                                      color: Colors.white,
-                                    ),
-                                  ),
+                                              .withValues(alpha: 0.05),
+                                        ],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
                                 ),
-                            ],
-                          ),
-                        ),
-                      ),
-
-                      // Item name and actions
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 8,
-                        ),
-                        width: double.infinity,
-                        child: Column(
-                          children: [
-                            Text(
-                              item.name,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: Theme.of(context).colorScheme.onSurface,
-                                letterSpacing: -0.2,
-                                height: 1.2,
+                                borderRadius: const BorderRadius.only(
+                                  topLeft: Radius.circular(14),
+                                  topRight: Radius.circular(14),
+                                ),
                               ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 2,
-                              textAlign: TextAlign.center,
-                            ),
-                            if (!isFolder) ...[
-                              const SizedBox(height: 8),
-                              SizedBox(
-                                height: 28,
-                                width: double.infinity,
-                                child:
-                                    downloadedBooks.any((b) => b.id == item.id)
-                                    ? FilledButton.icon(
-                                        onPressed:
-                                            null, // Disabled if downloaded
-                                        icon: const Icon(
-                                          Icons.check_rounded,
-                                          size: 14,
-                                        ),
-                                        label: const Text(
-                                          'İndirildi',
-                                          style: TextStyle(fontSize: 10),
-                                        ),
-                                        style: FilledButton.styleFrom(
-                                          padding: EdgeInsets.zero,
-                                          backgroundColor: Colors.green,
-                                          disabledBackgroundColor: Colors.green
-                                              .withValues(alpha: 0.5),
-                                          disabledForegroundColor: Colors.white,
-                                        ),
-                                      )
-                                    : OutlinedButton.icon(
-                                        onPressed: () => _startDownloadOrQueue(item),
-                                        icon: const Icon(
-                                          Icons.download_rounded,
-                                          size: 14,
-                                        ),
-                                        label: const Text(
-                                          'İndir',
-                                          style: TextStyle(fontSize: 10),
-                                        ),
-                                        style: OutlinedButton.styleFrom(
-                                          padding: EdgeInsets.zero,
-                                          side: BorderSide(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
+                              child: Stack(
+                                children: [
+                                  // Main icon (folder or book)
+                                  Center(
+                                    child: item.thumbnailLink != null
+                                        ? ClipRRect(
+                                            borderRadius:
+                                                const BorderRadius.vertical(
+                                                  top: Radius.circular(14),
+                                                ),
+                                            child: Image.network(
+                                              item.thumbnailLink!,
+                                              fit: BoxFit.cover,
+                                              width: double.infinity,
+                                              height: double.infinity,
+                                              errorBuilder:
+                                                  (context, error, stackTrace) {
+                                                    return Icon(
+                                                      isFolder
+                                                          ? Icons.folder_rounded
+                                                          : Icons
+                                                                .menu_book_rounded,
+                                                      size: 40,
+                                                      color: isFolder
+                                                          ? Theme.of(context)
+                                                                .colorScheme
+                                                                .tertiary
+                                                          : Theme.of(context)
+                                                                .colorScheme
+                                                                .primary,
+                                                    );
+                                                  },
+                                            ),
+                                          )
+                                        : Icon(
+                                            isFolder
+                                                ? Icons.folder_rounded
+                                                : Icons.menu_book_rounded,
+                                            size: 40,
+                                            color: isFolder
+                                                ? Theme.of(
+                                                    context,
+                                                  ).colorScheme.tertiary
+                                                : Theme.of(
+                                                    context,
+                                                  ).colorScheme.primary,
                                           ),
+                                  ),
+                                  // Small badge
+                                  if (!isFolder)
+                                    Positioned(
+                                      top: 8,
+                                      right: 8,
+                                      child: Container(
+                                        padding: const EdgeInsets.all(4),
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.secondary,
+                                          shape: BoxShape.circle,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .secondary
+                                                  .withValues(alpha: 0.3),
+                                              blurRadius: 4,
+                                              offset: const Offset(0, 2),
+                                            ),
+                                          ],
+                                        ),
+                                        child: const Icon(
+                                          Icons.cloud_rounded,
+                                          size: 12,
+                                          color: Colors.white,
                                         ),
                                       ),
+                                    ),
+                                ],
                               ),
-                            ],
-                          ],
-                        ),
+                            ),
+                          ),
+
+                          // Item name and actions
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            width: double.infinity,
+                            child: Column(
+                              children: [
+                                Text(
+                                  item.name,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurface,
+                                    letterSpacing: -0.2,
+                                    height: 1.2,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 2,
+                                  textAlign: TextAlign.center,
+                                ),
+                                if (!isFolder) ...[
+                                  const SizedBox(height: 8),
+                                  SizedBox(
+                                    height: 28,
+                                    width: double.infinity,
+                                    child:
+                                        downloadedBooks.any(
+                                          (b) => b.id == item.id,
+                                        )
+                                        ? FilledButton.icon(
+                                            onPressed:
+                                                null, // Disabled if downloaded
+                                            icon: const Icon(
+                                              Icons.check_rounded,
+                                              size: 14,
+                                            ),
+                                            label: const Text(
+                                              'İndirildi',
+                                              style: TextStyle(fontSize: 10),
+                                            ),
+                                            style: FilledButton.styleFrom(
+                                              padding: EdgeInsets.zero,
+                                              backgroundColor: Colors.green,
+                                              disabledBackgroundColor: Colors
+                                                  .green
+                                                  .withValues(alpha: 0.5),
+                                              disabledForegroundColor:
+                                                  Colors.white,
+                                            ),
+                                          )
+                                        : OutlinedButton.icon(
+                                            onPressed: () =>
+                                                _startDownloadOrQueue(item),
+                                            icon: const Icon(
+                                              Icons.download_rounded,
+                                              size: 14,
+                                            ),
+                                            label: const Text(
+                                              'İndir',
+                                              style: TextStyle(fontSize: 10),
+                                            ),
+                                            style: OutlinedButton.styleFrom(
+                                              padding: EdgeInsets.zero,
+                                              side: BorderSide(
+                                                color: Theme.of(
+                                                  context,
+                                                ).colorScheme.primary,
+                                              ),
+                                            ),
+                                          ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
+                    ),
                     // Download progress overlay
                     if (!isFolder && _downloadingBooks.contains(item.id))
                       Positioned.fill(
@@ -1512,7 +1655,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
                                 child: CircularProgressIndicator(
                                   value: _downloadProgress[item.id] ?? 0.0,
                                   strokeWidth: 4,
-                                  backgroundColor: Colors.white.withValues(alpha: 0.2),
+                                  backgroundColor: Colors.white.withValues(
+                                    alpha: 0.2,
+                                  ),
                                   color: Colors.white,
                                 ),
                               ),
@@ -1743,7 +1888,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
       _downloadingBooks.remove(bookId);
       _downloadProgress.remove(bookId);
     });
-    
+
     // Show immediate feedback
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
@@ -1752,7 +1897,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
         backgroundColor: Colors.orange,
       ),
     );
-    
+
     // Process next in queue
     _processQueue();
   }
@@ -1761,7 +1906,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
     print('📥 Download request for: ${item.name}');
     print('📊 Current downloads: ${_downloadingBooks.length}');
     print('📋 Queue length: ${_downloadQueue.length}');
-    
+
     // Check if already in queue
     if (_downloadQueue.any((i) => i.id == item.id)) {
       _showError('Bu kitap zaten kuyrukta.');
@@ -1840,7 +1985,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
           if (_downloadCancelFlags[item.id] == true) {
             throw Exception('Download cancelled by user');
           }
-          
+
           if (mounted) {
             setState(() {
               _downloadProgress[item.id] = progress;
@@ -1903,7 +2048,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
           _downloadProgress.remove(item.id);
           _downloadCancelFlags.remove(item.id);
         });
-        
+
         // Process next item in queue
         _processQueue();
       }
@@ -1912,117 +2057,118 @@ class _FolderHomePageState extends State<FolderHomePage> {
 
   Widget _buildStorageSelectionScreen() {
     return Center(
-      child: Container(
-        constraints: const BoxConstraints(maxWidth: 450),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildRecentFilesList(),
-            // Premium header icon with gradient
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Theme.of(context).colorScheme.primary,
-                    Theme.of(context).colorScheme.secondary,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.primary.withValues(alpha: 0.3),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8),
+      child: SingleChildScrollView(
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 450),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildRecentFilesList(),
+              // Premium header icon with gradient
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Theme.of(context).colorScheme.primaryFixed,
+                      Theme.of(context).colorScheme.secondaryFixed,
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
-                ],
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primary.withValues(alpha: 0.3),
+                      blurRadius: 20,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Image.asset("assets/logo.png", width: 128, height: 128),
               ),
-              child: Icon(
-                Icons.folder_open_rounded,
-                size: 48,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Dosya Kaynağı Seçin',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
-                color: Theme.of(context).colorScheme.onSurface,
-                letterSpacing: -0.5,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'PDF dosyalarınızı nereden açmak istersiniz?',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                letterSpacing: -0.2,
-              ),
-            ),
-            const SizedBox(height: 32),
-
-            // Local Storage Card - Premium
-            _buildPremiumStorageCard(
-              icon: Icons.computer_rounded,
-              title: 'Yerel Dosyalar',
-              subtitle: 'Bilgisayarınızdan dosya seçin',
-              gradientColors: [
-                Theme.of(context).colorScheme.primary,
-                Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
-              ],
-              onTap: _selectLocalStorage,
-            ),
-
-            const SizedBox(height: 12),
-
-            // Google Drive Card - Premium
-            _buildPremiumStorageCard(
-              icon: Icons.cloud_rounded,
-              title: 'Google Drive',
-              subtitle: '.book dosyalarını görüntüle',
-              gradientColors: [
-                Theme.of(context).colorScheme.secondary,
-                Theme.of(context).colorScheme.secondary.withValues(alpha: 0.7),
-              ],
-              onTap: _selectGoogleDriveStorage,
-            ),
-
-            const SizedBox(height: 12),
-
-            // My Books Card - Premium
-            _buildPremiumStorageCard(
-              icon: Icons.library_books_rounded,
-              title: 'Kitaplarım',
-              subtitle: 'İndirilen kitaplar',
-              gradientColors: [
-                Colors.orange,
-                Colors.orange.withValues(alpha: 0.7),
-              ],
-              onTap: _selectMyBooks,
-            ),
-
-            if (isLoading) ...[
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 3,
-                child: LinearProgressIndicator(
-                  backgroundColor: Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest,
+              const SizedBox(height: 20),
+              Text(
+                'Dosya Kaynağı Seçin',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: Theme.of(context).colorScheme.onSurface,
+                  letterSpacing: -0.5,
                 ),
               ),
+              const SizedBox(height: 8),
+              Text(
+                'PDF dosyalarınızı nereden açmak istersiniz?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  letterSpacing: -0.2,
+                ),
+              ),
+              const SizedBox(height: 32),
+
+              // Local Storage Card - Premium
+              _buildPremiumStorageCard(
+                icon: Icons.computer_rounded,
+                title: 'Yerel Dosyalar',
+                subtitle: 'Bilgisayarınızdan dosya seçin',
+                gradientColors: [
+                  Theme.of(context).colorScheme.primary,
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
+                ],
+                onTap: _selectLocalStorage,
+              ),
+
+              const SizedBox(height: 12),
+
+              // Google Drive Card - Premium
+              _buildPremiumStorageCard(
+                icon: Icons.cloud_rounded,
+                title: 'Google Drive',
+                subtitle: '.book dosyalarını görüntüle',
+                gradientColors: [
+                  Theme.of(context).colorScheme.secondary,
+                  Theme.of(
+                    context,
+                  ).colorScheme.secondary.withValues(alpha: 0.7),
+                ],
+                onTap: _selectGoogleDriveStorage,
+              ),
+
+              const SizedBox(height: 12),
+
+              // My Books Card - Premium
+              _buildPremiumStorageCard(
+                icon: Icons.library_books_rounded,
+                title: 'Kitaplarım',
+                subtitle: 'İndirilen kitaplar',
+                gradientColors: [
+                  Colors.orange,
+                  Colors.orange.withValues(alpha: 0.7),
+                ],
+                onTap: _selectMyBooks,
+              ),
+
+              if (isLoading) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 3,
+                  child: LinearProgressIndicator(
+                    backgroundColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -2078,7 +2224,8 @@ class _FolderHomePageState extends State<FolderHomePage> {
                           builder: (context) => AlertDialog(
                             title: const Text('Dosya Bulunamadı'),
                             content: Text(
-                                '"${file.name}" dosya yolunda bulunamadı. Listeden kaldırılsın mı?'),
+                              '"${file.name}" dosya yolunda bulunamadı. Listeden kaldırılsın mı?',
+                            ),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(context, false),
@@ -2086,8 +2233,10 @@ class _FolderHomePageState extends State<FolderHomePage> {
                               ),
                               TextButton(
                                 onPressed: () => Navigator.pop(context, true),
-                                child: const Text('Evet',
-                                    style: TextStyle(color: Colors.red)),
+                                child: const Text(
+                                  'Evet',
+                                  style: TextStyle(color: Colors.red),
+                                ),
                               ),
                             ],
                           ),
@@ -2105,7 +2254,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
                         color: Theme.of(context).colorScheme.surface,
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: Theme.of(context).dividerColor.withValues(alpha: 0.5),
+                          color: Theme.of(
+                            context,
+                          ).dividerColor.withValues(alpha: 0.5),
                         ),
                         boxShadow: [
                           BoxShadow(
@@ -2150,7 +2301,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
                               fontSize: 10,
                               color: Theme.of(context).disabledColor,
                             ),
-                          )
+                          ),
                         ],
                       ),
                     ),
@@ -2312,6 +2463,44 @@ class _FolderHomePageState extends State<FolderHomePage> {
                 );
               },
             ),
+            // Close App Button
+            IconButton(
+              tooltip: 'Uygulamayı Kapat',
+              icon: const Icon(Icons.close_rounded),
+              onPressed: () async {
+                // Onay diyalogu göster
+                final confirm = await showDialog<bool>(
+                  context: context,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Uygulamayı Kapat'),
+                    content: const Text(
+                      'Uygulamadan çıkmak istediğinize emin misiniz?',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('İptal'),
+                      ),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.red,
+                        ),
+                        child: const Text('Çıkış'),
+                      ),
+                    ],
+                  ),
+                );
+
+                if (confirm == true) {
+                  if (!kIsWeb && Platform.isWindows) {
+                    await windowManager.destroy();
+                  } else {
+                    SystemNavigator.pop();
+                  }
+                }
+              },
+            ),
           ],
         ),
         body: _buildStorageSelectionScreen(),
@@ -2373,9 +2562,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
                   const SizedBox(width: 10),
                   Flexible(
                     child: Text(
-                      useGoogleDrive
-                          ? 'Google Drive'
-                          : 'Yerel Depo',
+                      useGoogleDrive ? 'Google Drive' : 'Yerel Depo',
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -2434,6 +2621,51 @@ class _FolderHomePageState extends State<FolderHomePage> {
                       padding: const EdgeInsets.all(8),
                       margin: const EdgeInsets.only(right: 4),
                       child: const Icon(Icons.logout_rounded, size: 22),
+                    ),
+                  ),
+                ),
+                // Close App
+                Tooltip(
+                  message: 'Uygulamayı Kapat',
+                  child: InkWell(
+                    onTap: () async {
+                      // Onay diyalogu göster
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('Uygulamayı Kapat'),
+                          content: const Text(
+                            'Uygulamadan çıkmak istediğinize emin misiniz?',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('İptal'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: Colors.red,
+                              ),
+                              child: const Text('Çıkış'),
+                            ),
+                          ],
+                        ),
+                      );
+
+                      if (confirm == true) {
+                        if (!kIsWeb && Platform.isWindows) {
+                          await windowManager.destroy();
+                        } else {
+                          SystemNavigator.pop();
+                        }
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      margin: const EdgeInsets.only(right: 4),
+                      child: const Icon(Icons.close_rounded, size: 22),
                     ),
                   ),
                 ),
@@ -2525,7 +2757,9 @@ class _FolderHomePageState extends State<FolderHomePage> {
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
-                                  color: Theme.of(context).colorScheme.onSurface,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
                                 ),
                               ),
                             ),
@@ -2555,20 +2789,26 @@ class _FolderHomePageState extends State<FolderHomePage> {
                                 vertical: 4,
                               ),
                               decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: ListTile(
                                 dense: true,
                                 leading: CircleAvatar(
                                   radius: 16,
-                                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.primaryContainer,
                                   child: Text(
                                     '${index + 1}',
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onPrimaryContainer,
                                     ),
                                   ),
                                 ),

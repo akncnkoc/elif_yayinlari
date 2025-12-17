@@ -289,7 +289,8 @@ namespace TechAtlasInstaller
                 Path.Combine(desktopDir, "TechAtlas.lnk"),
                 Path.Combine(installDir, EXECUTABLE_NAME),
                 installDir,
-                "Tech Atlas"
+                "Tech Atlas",
+                Path.Combine(installDir, EXECUTABLE_NAME) // Explicitly use exe icon
             );
 
             // Drawing Pen Shortcut

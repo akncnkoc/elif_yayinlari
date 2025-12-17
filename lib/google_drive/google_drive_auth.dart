@@ -1,5 +1,8 @@
 import 'dart:convert';
-import 'dart:io';
+
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'package:encrypt/encrypt.dart' as encrypt;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -24,51 +27,87 @@ class GoogleDriveAuth {
 
     try {
       debugPrint('🔐 Initializing Google Drive service account auth...');
+      debugPrint('🕒 System Time: ${DateTime.now()}');
+      debugPrint('🕒 System Time (UTC): ${DateTime.now().toUtc()}');
 
-      // Read service account credentials
+      // Key and IV for decryption (Must match encryption script)
+      final keyString = 'TechAtlasSecureKey2025!StartNow.'; // 32 chars
+      final ivString = 'TechAtlasInitVec'; // 16 chars
+
+      final key = encrypt.Key.fromUtf8(keyString);
+      final iv = encrypt.IV(Uint8List.fromList(utf8.encode(ivString)));
+      final encrypter = encrypt.Encrypter(
+        encrypt.AES(key, mode: encrypt.AESMode.cbc),
+      );
+
+      // Read encrypted service account credentials
       String credentialsJson;
-      
-      if (kIsWeb) {
-        // Web: Load from assets
-        credentialsJson = await rootBundle.loadString('service_account.json');
-      } else {
-        // Desktop/Mobile: Try to load from executable directory first
-        try {
-          final exeDir = Platform.resolvedExecutable;
-          final exeDirPath = Directory(exeDir).parent.path;
-          final serviceAccountFile = File('$exeDirPath/service_account.json');
-          
-          if (await serviceAccountFile.exists()) {
-            debugPrint('📁 Loading service_account.json from: ${serviceAccountFile.path}');
-            credentialsJson = await serviceAccountFile.readAsString(encoding: utf8);
-          } else {
-            // Fallback to assets
-            debugPrint('⚠️ service_account.json not found in executable directory, trying assets...');
-            credentialsJson = await rootBundle.loadString('service_account.json');
-          }
-        } catch (e) {
-          // Fallback to assets if file reading fails
-          debugPrint('⚠️ Failed to load from file, trying assets: $e');
-          credentialsJson = await rootBundle.loadString('service_account.json');
-        }
+
+      try {
+        debugPrint(
+          '🔐 Loading encrypted credentials from assets/service_account.enc...',
+        );
+        // Always load from assets for the encrypted file
+        final ByteData encryptedData = await rootBundle.load(
+          'assets/service_account.enc',
+        );
+        final Uint8List encryptedBytes = encryptedData.buffer.asUint8List();
+
+        final encrypted = encrypt.Encrypted(encryptedBytes);
+        credentialsJson = encrypter.decrypt(encrypted, iv: iv);
+
+        debugPrint('✅ Credentials decrypted successfully');
+      } catch (e) {
+        debugPrint('❌ Failed to load/decrypt credentials: $e');
+        rethrow;
       }
-      
+
       final Map<String, dynamic> jsonMap = json.decode(credentialsJson);
-      
+
+      // Fix for common Private Key formatting issues
       // Fix for common Private Key formatting issues
       if (jsonMap.containsKey('private_key')) {
         String key = jsonMap['private_key'] as String;
+
+        debugPrint('🔑 Private key found. Length: ${key.length}');
+        debugPrint(
+          '🔑 Key starts with: ${key.substring(0, math.min(30, key.length))}...',
+        );
+
+        // 1. Handle double escaped newlines (literal \n)
         if (key.contains(r'\n')) {
-          debugPrint('🔧 Fixing escaped newlines in private key...');
+          debugPrint('🔧 Fixing double escaped newlines (literal \\n)...');
           key = key.replaceAll(r'\n', '\n');
         }
-        
-        // Remove any carriage returns which might cause issues on Windows
+
+        // 2. Remove carriage returns
         if (key.contains('\r')) {
-           debugPrint('🔧 Removing carriage returns from private key...');
-           key = key.replaceAll('\r', '');
+          debugPrint('🔧 Removing carriage returns...');
+          key = key.replaceAll('\r', '');
         }
-        
+
+        // 3. Ensure correct PEM headers/footers
+        if (!key.startsWith('-----BEGIN PRIVATE KEY-----')) {
+          debugPrint(
+            '⚠️ Warning: Private key does not start with standard PEM header',
+          );
+        }
+
+        // 4. Sometimes keys are one long line without any newlines.
+        // We should try to insert newlines if they are missing after header/before footer
+        if (!key.contains('\n') &&
+            key.contains('-----BEGIN PRIVATE KEY-----')) {
+          debugPrint('🔧 Key appears to be one line. Attempting to format...');
+          key = key.replaceAll(
+            '-----BEGIN PRIVATE KEY-----',
+            '-----BEGIN PRIVATE KEY-----\n',
+          );
+          key = key.replaceAll(
+            '-----END PRIVATE KEY-----',
+            '\n-----END PRIVATE KEY-----',
+          );
+        }
+
         jsonMap['private_key'] = key;
       }
 

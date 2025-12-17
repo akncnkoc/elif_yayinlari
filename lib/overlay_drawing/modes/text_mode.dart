@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/keyboard_text_field.dart';
 
 /// Metin ekleme modu - Ekrana metin etiketleri ekler
 class TextMode extends StatefulWidget {
@@ -41,7 +42,7 @@ class _TextModeState extends State<TextMode> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Metin Ekle'),
-        content: TextField(
+        content: KeyboardTextField(
           controller: textController,
           autofocus: true,
           maxLines: null,
@@ -101,7 +102,9 @@ class _TextModeState extends State<TextMode> {
                       color: item.color,
                       fontSize: item.fontSize,
                       fontWeight: item.fontWeight,
-                      fontStyle: item.isItalic ? FontStyle.italic : FontStyle.normal,
+                      fontStyle: item.isItalic
+                          ? FontStyle.italic
+                          : FontStyle.normal,
                       shadows: [
                         Shadow(
                           color: Colors.black.withValues(alpha: 0.3),
@@ -138,7 +141,9 @@ class _TextModeState extends State<TextMode> {
                     color: item.color,
                     fontSize: item.fontSize,
                     fontWeight: item.fontWeight,
-                    fontStyle: item.isItalic ? FontStyle.italic : FontStyle.normal,
+                    fontStyle: item.isItalic
+                        ? FontStyle.italic
+                        : FontStyle.normal,
                     shadows: [
                       Shadow(
                         color: Colors.black.withValues(alpha: 0.3),
@@ -184,10 +189,7 @@ class _TextModeState extends State<TextMode> {
               children: [
                 const Text(
                   'Metin Araçları',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                 ),
                 const SizedBox(height: 6),
 
@@ -212,7 +214,9 @@ class _TextModeState extends State<TextMode> {
                           color: color,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: isSelected ? Colors.blue : Colors.grey.shade300,
+                            color: isSelected
+                                ? Colors.blue
+                                : Colors.grey.shade300,
                             width: isSelected ? 3 : 1,
                           ),
                         ),
@@ -240,9 +244,14 @@ class _TextModeState extends State<TextMode> {
                         });
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: isSelected ? Colors.blue : Colors.grey.shade200,
+                          color: isSelected
+                              ? Colors.blue
+                              : Colors.grey.shade200,
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
@@ -250,7 +259,9 @@ class _TextModeState extends State<TextMode> {
                           style: TextStyle(
                             fontSize: 10,
                             color: isSelected ? Colors.white : Colors.black,
-                            fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            fontWeight: isSelected
+                                ? FontWeight.bold
+                                : FontWeight.normal,
                           ),
                         ),
                       ),

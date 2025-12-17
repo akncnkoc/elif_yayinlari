@@ -7,6 +7,8 @@ class DrawingToolbar extends StatefulWidget {
   final bool isEraser;
   final Function(Color) onColorChanged;
   final Function(double) onStrokeWidthChanged;
+  final bool isMouseMode;
+  final VoidCallback onMouseModeToggle;
   final VoidCallback onEraserToggle;
   final VoidCallback onClear;
   final VoidCallback onUndo;
@@ -19,6 +21,8 @@ class DrawingToolbar extends StatefulWidget {
     required this.isEraser,
     required this.onColorChanged,
     required this.onStrokeWidthChanged,
+    required this.isMouseMode,
+    required this.onMouseModeToggle,
     required this.onEraserToggle,
     required this.onClear,
     required this.onUndo,
@@ -92,9 +96,29 @@ class _DrawingToolbarState extends State<DrawingToolbar> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Mouse Mode Toggle (EN ÜST)
+                _ToolButton(
+                  icon: widget.isMouseMode
+                      ? Icons.mouse_rounded
+                      : Icons.edit_rounded,
+                  tooltip: widget.isMouseMode
+                      ? 'Mouse Modu (Tıkla: Çizim Modu)'
+                      : 'Çizim Modu (Tıkla: Mouse Modu)',
+                  isSelected: !widget.isMouseMode,
+                  onPressed: widget.onMouseModeToggle,
+                  color: widget.isMouseMode
+                      ? Colors.blue.shade700
+                      : Colors.green.shade700,
+                ),
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+
                 // Kalem/Silgi toggle
                 _ToolButton(
-                  icon: widget.isEraser ? Icons.create_rounded : Icons.edit_rounded,
+                  icon: widget.isEraser
+                      ? Icons.create_rounded
+                      : Icons.edit_rounded,
                   tooltip: widget.isEraser ? 'Kalem' : 'Silgi',
                   isSelected: !widget.isEraser,
                   onPressed: widget.onEraserToggle,
@@ -186,17 +210,15 @@ class _DrawingToolbarState extends State<DrawingToolbar> {
                 children: [
                   const Text(
                     'Renk Seçin',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: _colors.map((color) {
-                      final isSelected = color.toARGB32() == widget.selectedColor.toARGB32();
+                      final isSelected =
+                          color.toARGB32() == widget.selectedColor.toARGB32();
                       return GestureDetector(
                         onTap: () {
                           widget.onColorChanged(color);
@@ -211,7 +233,9 @@ class _DrawingToolbarState extends State<DrawingToolbar> {
                             color: color,
                             shape: BoxShape.circle,
                             border: Border.all(
-                              color: isSelected ? Colors.blue : Colors.grey.shade300,
+                              color: isSelected
+                                  ? Colors.blue
+                                  : Colors.grey.shade300,
                               width: isSelected ? 3 : 1,
                             ),
                           ),
@@ -252,10 +276,7 @@ class _DrawingToolbarState extends State<DrawingToolbar> {
                 children: [
                   const Text(
                     'Kalem Boyutu',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                   ),
                   const SizedBox(height: 8),
                   ..._sizes.map((size) {
@@ -279,7 +300,9 @@ class _DrawingToolbarState extends State<DrawingToolbar> {
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
-                            color: isSelected ? Colors.blue : Colors.grey.shade300,
+                            color: isSelected
+                                ? Colors.blue
+                                : Colors.grey.shade300,
                             width: isSelected ? 2 : 1,
                           ),
                         ),
@@ -298,7 +321,9 @@ class _DrawingToolbarState extends State<DrawingToolbar> {
                               '${size.toStringAsFixed(0)} pt',
                               style: TextStyle(
                                 fontSize: 12,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
                               ),
                             ),
                           ],
@@ -356,15 +381,13 @@ class _ToolButton extends StatelessWidget {
               children: [
                 Icon(
                   icon,
-                  color: color ?? (isSelected ? Colors.blue : Colors.grey.shade700),
+                  color:
+                      color ??
+                      (isSelected ? Colors.blue : Colors.grey.shade700),
                   size: 20,
                 ),
                 if (child != null)
-                  Positioned(
-                    bottom: 0,
-                    right: 0,
-                    child: child!,
-                  ),
+                  Positioned(bottom: 0, right: 0, child: child!),
               ],
             ),
           ),

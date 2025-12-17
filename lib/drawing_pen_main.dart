@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
 import 'package:universal_io/io.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:screen_retriever/screen_retriever.dart';
@@ -17,6 +18,8 @@ import 'overlay_drawing/modes/laser_pointer_mode.dart';
 import 'overlay_drawing/modes/grid_mode.dart';
 import 'overlay_drawing/modes/shapes_3d_mode.dart';
 import 'services/bluetooth_input_handler.dart';
+import 'services/virtual_keyboard_service.dart';
+import 'widgets/virtual_keyboard.dart';
 
 @pragma('vm:entry-point')
 void drawingPenMain() {
@@ -74,6 +77,30 @@ class DrawingPenApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Çizim Kalemi',
+      builder: (context, child) {
+        return Stack(
+          children: [
+            if (child != null) child,
+            // Virtual keyboard overlay
+            ListenableBuilder(
+              listenable: VirtualKeyboardService(),
+              builder: (context, _) {
+                final keyboardService = VirtualKeyboardService();
+                if (!keyboardService.isVisible) {
+                  return const SizedBox.shrink();
+                }
+
+                return Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: const VirtualKeyboard(),
+                );
+              },
+            ),
+          ],
+        );
+      },
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
@@ -91,7 +118,8 @@ class TransparentDrawingOverlay extends StatefulWidget {
   const TransparentDrawingOverlay({super.key});
 
   @override
-  State<TransparentDrawingOverlay> createState() => _TransparentDrawingOverlayState();
+  State<TransparentDrawingOverlay> createState() =>
+      _TransparentDrawingOverlayState();
 }
 
 class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
@@ -100,7 +128,8 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
   bool _isEraser = false;
   final GlobalKey<DrawingCanvasState> _canvasKey = GlobalKey();
   DrawingMode? _currentMode; // Aktif mod (null = hiçbir mod seçili değil)
-  bool _drawingEnabled = true; // Çizim modu açık/kapalı
+  bool _isMouseMode =
+      false; // false = Pen Mode (çizim), true = Mouse Mode (click-through)
 
   // Sürüklenebilir widget pozisyonları
   Offset _modeSelectorPosition = const Offset(16, 16);
@@ -110,16 +139,77 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
   final BluetoothInputHandler _bluetoothHandler = BluetoothInputHandler();
   bool _bluetoothEnabled = false;
 
+  // Ekran klavyesi algılama
+  bool _isKeyboardVisible = false;
+
   @override
   void initState() {
     super.initState();
     _initBluetooth();
+    _startKeyboardDetection();
   }
 
   @override
   void dispose() {
     _bluetoothHandler.stop();
     super.dispose();
+  }
+
+  /// Ekran klavyesini düzenli olarak kontrol et
+  void _startKeyboardDetection() {
+    if (!kIsWeb && Platform.isWindows) {
+      // Her 500ms'de bir kontrol et
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _checkKeyboard();
+          _startKeyboardDetection();
+        }
+      });
+    }
+  }
+
+  /// Windows ekran klavyesinin açık olup olmadığını kontrol et
+  Future<void> _checkKeyboard() async {
+    if (!kIsWeb && Platform.isWindows) {
+      try {
+        // tasklist komutu ile ekran klavyesini kontrol et
+        final result = await Process.run('tasklist', [
+          '/FI',
+          'IMAGENAME eq TabTip.exe',
+        ]);
+
+        final bool keyboardOpen = result.stdout.toString().contains(
+          'TabTip.exe',
+        );
+
+        // Durum değiştiyse window ayarlarını güncelle
+        if (keyboardOpen != _isKeyboardVisible) {
+          setState(() {
+            _isKeyboardVisible = keyboardOpen;
+          });
+
+          if (!_isMouseMode) {
+            // Sadece pen mode'dayken ayarla
+            if (_isKeyboardVisible) {
+              // Klavye açıldı - always on top'u kapat
+              debugPrint(
+                '⌨️ Ekran klavyesi algılandı - pencere arka plana alınıyor',
+              );
+              await windowManager.setAlwaysOnTop(false);
+            } else {
+              // Klavye kapandı - always on top'u tekrar aç
+              debugPrint(
+                '⌨️ Ekran klavyesi kapandı - pencere ön plana alınıyor',
+              );
+              await windowManager.setAlwaysOnTop(true);
+            }
+          }
+        }
+      } catch (e) {
+        // Hata oluşursa sessizce devam et
+        debugPrint('Ekran klavyesi kontrolü hatası: $e');
+      }
+    }
   }
 
   Future<void> _initBluetooth() async {
@@ -181,12 +271,44 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
           _isEraser = !_isEraser;
         });
         break;
+      case 'm':
+        // Toggle mouse/pen mode
+        _toggleMouseMode();
+        break;
       case 'q':
         // Close app
         if (!kIsWeb && Platform.isWindows) {
           windowManager.close();
         }
         break;
+    }
+  }
+
+  Future<void> _toggleMouseMode() async {
+    debugPrint('🔄 Toggling mouse mode. Current: $_isMouseMode');
+    setState(() {
+      _isMouseMode = !_isMouseMode;
+    });
+    debugPrint('✅ Mouse mode toggled to: $_isMouseMode');
+
+    // Windows'ta window ayarları
+    if (!kIsWeb && Platform.isWindows) {
+      if (_isMouseMode) {
+        // MOUSE MODE: Click-through aktif
+        debugPrint('🖱️ Activating MOUSE mode (full click-through)');
+        await windowManager.setAlwaysOnTop(false);
+        await windowManager.setIgnoreMouseEvents(true, forward: true);
+        debugPrint('✅ Mouse mode activated - use screen edge swipe to return');
+      } else {
+        // PEN MODE: Çizim aktif
+        debugPrint('✏️ Activating PEN mode (drawing enabled)');
+        await windowManager.setIgnoreMouseEvents(false);
+        // Sadece ekran klavyesi açık değilse always on top'u aç
+        if (!_isKeyboardVisible) {
+          await windowManager.setAlwaysOnTop(true);
+        }
+        debugPrint('✅ Pen mode activated');
+      }
     }
   }
 
@@ -283,137 +405,193 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        children: [
-          // Aktif mod içeriği (çizim hariç)
-          if (_buildModeContent() != null)
-            Positioned.fill(
-              child: _buildModeContent()!,
-            ),
+    return Focus(
+      autofocus: true,
+      onKeyEvent: (FocusNode node, KeyEvent event) {
+        // M tuşu ile mouse/pen mode toggle (özellikle mouse modunda önemli)
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.keyM) {
+          debugPrint('⌨️ M key pressed - toggling mouse mode');
+          _toggleMouseMode();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          children: [
+            // Aktif mod içeriği (çizim hariç)
+            if (_buildModeContent() != null)
+              Positioned.fill(child: _buildModeContent()!),
 
-          // Çizim katmanı (her zaman en üstte, açık/kapalı toggle edilebilir)
-          if (_drawingEnabled)
-            Positioned.fill(
-              child: DrawingCanvas(
-                key: _canvasKey,
-                color: _selectedColor,
-                strokeWidth: _strokeWidth,
-                isEraser: _isEraser,
-              ),
-            ),
-
-          // Sürüklenebilir mod seçici (her zaman görünür)
-          Positioned(
-            left: _modeSelectorPosition.dx,
-            top: _modeSelectorPosition.dy,
-            child: Draggable(
-              feedback: Opacity(
-                opacity: 0.8,
-                child: _ModeSelector(
-                  currentMode: _currentMode,
-                  drawingEnabled: _drawingEnabled,
-                  onModeChanged: (mode) {},
-                  onDrawingToggle: () {},
+            // Çizim katmanı (sadece Pen Mode'da görünür)
+            if (!_isMouseMode)
+              Positioned.fill(
+                child: DrawingCanvas(
+                  key: _canvasKey,
+                  color: _selectedColor,
+                  strokeWidth: _strokeWidth,
+                  isEraser: _isEraser,
                 ),
               ),
-              childWhenDragging: Container(),
-              onDragEnd: (details) {
-                setState(() {
-                  _modeSelectorPosition = details.offset;
-                });
-              },
-              child: _ModeSelector(
-                currentMode: _currentMode,
-                drawingEnabled: _drawingEnabled,
-                onModeChanged: (mode) {
-                  setState(() {
-                    _currentMode = mode;
-                  });
-                },
-                onDrawingToggle: () {
-                  setState(() {
-                    _drawingEnabled = !_drawingEnabled;
-                  });
-                },
+
+            // Sürüklenebilir mod seçici (sadece Pen Mode'da)
+            if (!_isMouseMode)
+              Positioned(
+                left: _modeSelectorPosition.dx,
+                top: _modeSelectorPosition.dy,
+                child: Draggable(
+                  feedback: Opacity(
+                    opacity: 0.8,
+                    child: _ModeSelector(
+                      currentMode: _currentMode,
+                      isMouseMode: _isMouseMode,
+                      onModeChanged: (mode) {},
+                      onMouseModeToggle: () {},
+                    ),
+                  ),
+                  childWhenDragging: Container(),
+                  onDragEnd: (details) {
+                    setState(() {
+                      _modeSelectorPosition = details.offset;
+                    });
+                  },
+                  child: _ModeSelector(
+                    currentMode: _currentMode,
+                    isMouseMode: _isMouseMode,
+                    onModeChanged: (mode) {
+                      setState(() {
+                        _currentMode = mode;
+                      });
+                    },
+                    onMouseModeToggle: _toggleMouseMode,
+                  ),
+                ),
               ),
-            ),
-          ),
 
-          // Bluetooth status indicator (sağ üst köşe)
-          if (_bluetoothEnabled)
-            Positioned(
-              right: 16,
-              top: 16,
-              child: BluetoothStatusIndicator(handler: _bluetoothHandler),
-            ),
-
-          // Sürüklenebilir toolbar (sadece çizim modu açıkken)
-          if (_drawingEnabled)
-            Positioned(
-              left: _toolbarPosition.dx,
-              top: _toolbarPosition.dy,
-              child: Draggable(
-                feedback: Opacity(
-                  opacity: 0.8,
-                  child: Material(
-                    color: Colors.transparent,
-                    child: DrawingToolbar(
-                      selectedColor: _selectedColor,
-                      strokeWidth: _strokeWidth,
-                      isEraser: _isEraser,
-                      onColorChanged: (color) {},
-                      onStrokeWidthChanged: (width) {},
-                      onEraserToggle: () {},
-                      onClear: () {},
-                      onUndo: () {},
-                      onClose: () {},
+            // Mouse Mode'da SAĞ KENARDAN SWIPE ile çizim moduna dönüş
+            // Dokunmatik ekran için ekran kenarından içeri kaydırma hareketi
+            if (_isMouseMode)
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                child: GestureDetector(
+                  onHorizontalDragEnd: (details) {
+                    // Sağdan sola kaydırma (negatif velocity)
+                    if (details.primaryVelocity != null &&
+                        details.primaryVelocity! < -500) {
+                      debugPrint(
+                        '� Right edge swipe detected - toggling to pen mode',
+                      );
+                      _toggleMouseMode();
+                    }
+                  },
+                  child: Container(
+                    width: 40, // 40px genişliğinde swipe bölgesi
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          Colors.transparent,
+                          Colors.orange.shade600.withOpacity(0.3),
+                        ],
+                      ),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white.withOpacity(0.6),
+                        size: 24,
+                      ),
                     ),
                   ),
                 ),
-                childWhenDragging: Container(),
-                onDragEnd: (details) {
-                  setState(() {
-                    _toolbarPosition = details.offset;
-                  });
-                },
-                child: DrawingToolbar(
-                  selectedColor: _selectedColor,
-                  strokeWidth: _strokeWidth,
-                  isEraser: _isEraser,
-                  onColorChanged: (color) {
+              ),
+
+            // Bluetooth status indicator (sağ üst köşe)
+            if (_bluetoothEnabled)
+              Positioned(
+                right: 16,
+                top: 16,
+                child: BluetoothStatusIndicator(handler: _bluetoothHandler),
+              ),
+
+            // Sürüklenebilir toolbar (sadece Pen Mode'da)
+            if (!_isMouseMode)
+              Positioned(
+                left: _toolbarPosition.dx,
+                top: _toolbarPosition.dy,
+                child: Draggable(
+                  feedback: Opacity(
+                    opacity: 0.8,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: DrawingToolbar(
+                        selectedColor: _selectedColor,
+                        strokeWidth: _strokeWidth,
+                        isEraser: _isEraser,
+                        isMouseMode: _isMouseMode,
+                        onMouseModeToggle: () {},
+                        onColorChanged: (color) {},
+                        onStrokeWidthChanged: (width) {},
+                        onEraserToggle: () {},
+                        onClear: () {},
+                        onUndo: () {},
+                        onClose: () {},
+                      ),
+                    ),
+                  ),
+                  childWhenDragging: Container(),
+                  onDragEnd: (details) {
                     setState(() {
-                      _selectedColor = color;
-                      _isEraser = false;
+                      _toolbarPosition = details.offset;
                     });
                   },
-                  onStrokeWidthChanged: (width) {
-                    setState(() {
-                      _strokeWidth = width;
-                    });
-                  },
-                  onEraserToggle: () {
-                    setState(() {
-                      _isEraser = !_isEraser;
-                    });
-                  },
-                  onClear: () {
-                    _canvasKey.currentState?.clear();
-                  },
-                  onUndo: () {
-                    _canvasKey.currentState?.undo();
-                  },
-                  onClose: () async {
-                    // Uygulamayı kapat
-                    if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-                      await windowManager.close();
-                    }
-                  },
+                  child: DrawingToolbar(
+                    selectedColor: _selectedColor,
+                    strokeWidth: _strokeWidth,
+                    isEraser: _isEraser,
+                    isMouseMode: _isMouseMode,
+                    onMouseModeToggle: _toggleMouseMode,
+                    onColorChanged: (color) {
+                      setState(() {
+                        _selectedColor = color;
+                        _isEraser = false;
+                      });
+                    },
+                    onStrokeWidthChanged: (width) {
+                      setState(() {
+                        _strokeWidth = width;
+                      });
+                    },
+                    onEraserToggle: () {
+                      setState(() {
+                        _isEraser = !_isEraser;
+                      });
+                    },
+                    onClear: () {
+                      _canvasKey.currentState?.clear();
+                    },
+                    onUndo: () {
+                      _canvasKey.currentState?.undo();
+                    },
+                    onClose: () async {
+                      // Uygulamayı kapat
+                      if (!kIsWeb &&
+                          (Platform.isWindows ||
+                              Platform.isLinux ||
+                              Platform.isMacOS)) {
+                        await windowManager.close();
+                      }
+                    },
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -422,15 +600,15 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
 /// Mod seçici widget
 class _ModeSelector extends StatelessWidget {
   final DrawingMode? currentMode;
-  final bool drawingEnabled;
+  final bool isMouseMode;
   final Function(DrawingMode?) onModeChanged;
-  final VoidCallback onDrawingToggle;
+  final VoidCallback onMouseModeToggle;
 
   const _ModeSelector({
     required this.currentMode,
-    required this.drawingEnabled,
+    required this.isMouseMode,
     required this.onModeChanged,
-    required this.onDrawingToggle,
+    required this.onMouseModeToggle,
   });
 
   @override
@@ -441,33 +619,36 @@ class _ModeSelector extends StatelessWidget {
         color: Colors.white.withValues(alpha: 0.95),
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.2),
-            blurRadius: 12,
-          ),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 12),
         ],
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Çizim Modu Toggle Butonu (Özel)
+          // Mouse/Pen Mode Toggle Butonu
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: Tooltip(
-              message: 'Çizim Modu ${drawingEnabled ? "Açık" : "Kapalı"}\n${DrawingMode.pen.description}',
+              message: isMouseMode
+                  ? '🖱️ Mouse Modu (Tıkla: Çizim Moduna Geç)'
+                  : '✏️ Çizim Modu (Tıkla: Mouse Moduna Geç)',
               child: IconButton(
-                onPressed: onDrawingToggle,
-                icon: Text(
-                  DrawingMode.pen.icon,
-                  style: const TextStyle(fontSize: 20),
+                onPressed: onMouseModeToggle,
+                icon: Icon(
+                  isMouseMode ? Icons.mouse_rounded : Icons.edit_rounded,
+                  size: 20,
                 ),
                 style: IconButton.styleFrom(
-                  backgroundColor: drawingEnabled
-                      ? Colors.green.withValues(alpha: 0.3)
-                      : Colors.grey.withValues(alpha: 0.2),
-                  side: drawingEnabled
-                      ? const BorderSide(color: Colors.green, width: 2)
-                      : null,
+                  backgroundColor: isMouseMode
+                      ? Colors.blue.withValues(alpha: 0.3)
+                      : Colors.green.withValues(alpha: 0.3),
+                  foregroundColor: isMouseMode
+                      ? Colors.blue.shade700
+                      : Colors.green.shade700,
+                  side: BorderSide(
+                    color: isMouseMode ? Colors.blue : Colors.green,
+                    width: 2,
+                  ),
                 ),
               ),
             ),
@@ -477,7 +658,9 @@ class _ModeSelector extends StatelessWidget {
           const Divider(height: 8),
 
           // Diğer mod butonları
-          ...DrawingMode.values.where((mode) => mode != DrawingMode.pen).map((mode) {
+          ...DrawingMode.values.where((mode) => mode != DrawingMode.pen).map((
+            mode,
+          ) {
             final isSelected = mode == currentMode;
             return Padding(
               padding: const EdgeInsets.only(bottom: 4),
@@ -492,10 +675,7 @@ class _ModeSelector extends StatelessWidget {
                       onModeChanged(mode);
                     }
                   },
-                  icon: Text(
-                    mode.icon,
-                    style: const TextStyle(fontSize: 20),
-                  ),
+                  icon: Text(mode.icon, style: const TextStyle(fontSize: 20)),
                   style: IconButton.styleFrom(
                     backgroundColor: isSelected
                         ? Colors.blue.withValues(alpha: 0.2)
@@ -517,7 +697,10 @@ class _ModeSelector extends StatelessWidget {
             message: 'Çizim Kalemini Kapat',
             child: IconButton(
               onPressed: () async {
-                if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+                if (!kIsWeb &&
+                    (Platform.isWindows ||
+                        Platform.isLinux ||
+                        Platform.isMacOS)) {
                   await windowManager.close();
                 }
               },

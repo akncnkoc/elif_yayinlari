@@ -5,14 +5,17 @@ import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:screen_retriever/screen_retriever.dart';
 import 'login_page.dart';
+import 'splash_screen.dart';
 import 'folder_homepage.dart';
 import 'drawing_pen_main.dart' as drawing_pen;
+import 'services/virtual_keyboard_service.dart';
+import 'widgets/virtual_keyboard.dart';
 
 void main(List<String> args) async {
   try {
     print('🚀 Application starting...');
     print('📍 Args: $args');
-    
+
     // Eğer --drawing-pen argümanı varsa çizim kalemi uygulamasını başlat
     if (args.contains('--drawing-pen')) {
       print('🎨 Starting drawing pen mode');
@@ -22,21 +25,25 @@ void main(List<String> args) async {
     // Normal ana uygulama
     print('✅ Initializing Flutter binding...');
     WidgetsFlutterBinding.ensureInitialized();
+    // FlutterNativeSplash.preserve is REMOVED to use custom splash
 
-    print('✅ Setting system UI mode...');
-    SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.immersiveSticky,
-      overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
-    );
+    // Mobile only: Immersive mode
+    if (Platform.isAndroid || Platform.isIOS) {
+      print('✅ Setting system UI mode (Mobile only)...');
+      SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.immersiveSticky,
+        overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
+      );
 
-    SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.dark,
-        systemNavigationBarColor: Colors.transparent,
-        systemNavigationBarIconBrightness: Brightness.dark,
-      ),
-    );
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarIconBrightness: Brightness.dark,
+        ),
+      );
+    }
 
     // Web'de window_manager kullanma
     if (!kIsWeb && Platform.isWindows) {
@@ -44,28 +51,22 @@ void main(List<String> args) async {
         print('🪟 Initializing window manager...');
         await windowManager.ensureInitialized();
 
-        print('📺 Getting primary display...');
-        final primaryDisplay = await screenRetriever.getPrimaryDisplay();
-
-        final scaledWidth = primaryDisplay.size.width;
-        final scaledHeight = primaryDisplay.size.height;
-
-        final windowWidth = scaledWidth / 2;
-        final windowHeight = scaledHeight * 0.8;
-
-        WindowOptions windowOptions = WindowOptions(
-          size: Size(windowWidth, windowHeight),
-          minimumSize: Size(windowWidth * 0.8, windowHeight * 0.8),
+        // Splash screen için 500x500 küçük pencere
+        WindowOptions windowOptions = const WindowOptions(
+          size: Size(500, 500),
           center: true,
           backgroundColor: Colors.transparent,
           titleBarStyle: TitleBarStyle.hidden,
-          alwaysOnTop: false,
+          alwaysOnTop: true,
           windowButtonVisibility: false,
-          fullScreen: true,
+          fullScreen: false,
         );
 
         print('✅ Window options configured, showing window...');
         windowManager.waitUntilReadyToShow(windowOptions, () async {
+          await windowManager.setAsFrameless(); // Ensure strictly frameless
+          await windowManager.setHasShadow(false);
+          await windowManager.center();
           await windowManager.show();
           await windowManager.focus();
           print('✅ Window shown and focused');
@@ -105,7 +106,28 @@ class TechAtlas extends StatelessWidget {
           data: MediaQuery.of(
             context,
           ).copyWith(textScaler: const TextScaler.linear(1.0)),
-          child: child!,
+          child: Stack(
+            children: [
+              child!,
+              // Virtual keyboard overlay
+              ListenableBuilder(
+                listenable: VirtualKeyboardService(),
+                builder: (context, _) {
+                  final keyboardService = VirtualKeyboardService();
+                  if (!keyboardService.isVisible) {
+                    return const SizedBox.shrink();
+                  }
+
+                  return Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: const VirtualKeyboard(),
+                  );
+                },
+              ),
+            ],
+          ),
         );
       },
       theme: ThemeData(
@@ -249,7 +271,7 @@ class TechAtlas extends StatelessWidget {
           behavior: SnackBarBehavior.floating,
         ),
       ),
-      home: const FolderHomePage(),
+      home: const SplashScreen(),
     );
   }
 }
