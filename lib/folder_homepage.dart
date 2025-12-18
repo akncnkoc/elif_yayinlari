@@ -20,6 +20,7 @@ import './google_drive/models.dart' show DriveItem;
 import './models/crop_data.dart';
 import './models/downloaded_book.dart';
 import './models/app_models.dart';
+import './models/page_content.dart'; // [NEW]
 import './services/book_storage_service.dart';
 import 'login_page.dart';
 import 'viewer/pdf_drawing_viewer_page.dart';
@@ -647,40 +648,39 @@ class _FolderHomePageState extends State<FolderHomePage> {
         builder: (context) => const Center(child: CircularProgressIndicator()),
       );
 
-      // Decode the book file (zip format)
+      // Decode the book file (zip format) to a searchable archive
       final archive = ZipDecoder().decodeBytes(bytes);
 
-      // Look for original.pdf and crop_coordinates.json in the archive
-      ArchiveFile? originalPdf;
+      // 1. Find and parse crop_coordinates.json FIRST to get the PDF filename
       ArchiveFile? cropCoordinatesJson;
+      ArchiveFile? pageContentsJson;
+      // Also look for original.pdf as fallback
+      ArchiveFile? originalPdf;
 
       for (final file in archive) {
-        if (file.isFile && file.name.toLowerCase() == 'original.pdf') {
-          originalPdf = file;
-        } else if (file.isFile &&
-            file.name.toLowerCase() == 'crop_coordinates.json') {
+        final lowerName = file.name.toLowerCase();
+        if (lowerName == 'crop_coordinates.json') {
           cropCoordinatesJson = file;
+        } else if (lowerName == 'page_contents.json') {
+          pageContentsJson = file;
+        } else if (lowerName == 'original.pdf') {
+          originalPdf = file;
         }
       }
 
-      if (originalPdf == null) {
-        if (!mounted) return;
-        Navigator.of(context).pop();
-        _showError('original.pdf not found in the book file');
-        return;
-      }
-
-      // Web'de dosya yazmadan doğrudan bytes kullanacağız
-      final pdfBytes = originalPdf.content as List<int>;
+      CropData? cropData;
+      String? dynamicPdfName;
 
       // Parse crop coordinates data if available
-      CropData? cropData;
       if (cropCoordinatesJson != null) {
         try {
           final jsonString = utf8.decode(
             cropCoordinatesJson.content as List<int>,
           );
           cropData = CropData.fromJsonString(jsonString);
+          if (cropData.pdfFile.isNotEmpty) {
+            dynamicPdfName = cropData.pdfFile;
+          }
         } catch (e) {
           print('⚠️ Failed to parse crop_coordinates.json: $e');
         }
@@ -688,11 +688,70 @@ class _FolderHomePageState extends State<FolderHomePage> {
         print('⚠️ No crop_coordinates.json found in ZIP');
       }
 
+      // 2. Locate the PDF file
+      ArchiveFile? targetPdfFile;
+
+      // Try finding the dynamic PDF name from JSON
+      if (dynamicPdfName != null) {
+        for (final file in archive) {
+          if (file.name == dynamicPdfName) {
+            targetPdfFile = file;
+            break;
+          }
+        }
+        // Normalize match (case insensitive try)
+        if (targetPdfFile == null) {
+          for (final file in archive) {
+            if (file.name.toLowerCase() == dynamicPdfName.toLowerCase()) {
+              targetPdfFile = file;
+              break;
+            }
+          }
+        }
+      }
+
+      // Fallback to original.pdf
+      if (targetPdfFile == null) {
+        targetPdfFile = originalPdf;
+      }
+
+      // Ultimate fallback: first PDF found
+      if (targetPdfFile == null) {
+        for (final file in archive) {
+          if (file.name.toLowerCase().endsWith('.pdf')) {
+            targetPdfFile = file;
+            break;
+          }
+        }
+      }
+
+      if (targetPdfFile == null) {
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        _showError(
+          'No PDF file found in book archive (expected $dynamicPdfName or original.pdf)',
+        );
+        return;
+      }
+
+      // Web'de dosya yazmadan doğrudan bytes kullanacağız
+      final pdfBytes = targetPdfFile.content as List<int>;
+
+      // Parse page contents if available
+      PageContent? pageContent;
+      if (pageContentsJson != null) {
+        try {
+          final jsonString = utf8.decode(pageContentsJson.content as List<int>);
+          pageContent = PageContent.fromJsonString(jsonString);
+        } catch (e) {
+          print('⚠️ Failed to parse page_contents.json: $e');
+        }
+      }
+
       if (!mounted) return;
       Navigator.of(context).pop();
 
       // Web için bytes'ı kullan - path yerine
-      // PDF viewer'a bytes eklemek gerekecek
       setState(() {
         openTabs.add(
           OpenPdfTab(
@@ -704,6 +763,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
             zipFilePath: null, // Web'de zip path yok
             pdfBytes: Uint8List.fromList(pdfBytes), // PDF bytes'ı sakla
             zipBytes: bytes, // ZIP bytes'ı da sakla (crop resimleri için)
+            pageContent: pageContent,
           ),
         );
         currentTabIndex = openTabs.length - 1;
@@ -729,47 +789,111 @@ class _FolderHomePageState extends State<FolderHomePage> {
       final bytes = await File(zipPath).readAsBytes();
       final archive = ZipDecoder().decodeBytes(bytes);
 
-      // Look for original.pdf and crop_coordinates.json in the archive
-      ArchiveFile? originalPdf;
+      // 1. Find and parse crop_coordinates.json FIRST to get the PDF filename
       ArchiveFile? cropCoordinatesJson;
+      ArchiveFile? pageContentsJson;
+      ArchiveFile? originalPdf; // Keep as fallback
 
       for (final file in archive) {
-        if (file.isFile && file.name.toLowerCase() == 'original.pdf') {
-          originalPdf = file;
-        } else if (file.isFile &&
-            file.name.toLowerCase() == 'crop_coordinates.json') {
+        final lowerName = file.name.toLowerCase();
+        // print('📂 File: $lowerName'); // Debug
+        if (lowerName.endsWith('crop_coordinates.json')) {
           cropCoordinatesJson = file;
+        } else if (lowerName.endsWith('page_contents.json')) {
+          print('✅ Found content file: ${file.name}');
+          pageContentsJson = file;
+        } else if (lowerName == 'original.pdf') {
+          originalPdf = file;
         }
       }
 
-      if (originalPdf == null) {
-        if (!mounted) return;
-        Navigator.of(context).pop();
-        _showError('original.pdf not found in the book file');
-        return;
-      }
-
-      // Extract the PDF to a temporary location
-      final tempDir = await getTemporaryDirectory();
-      final pdfPath =
-          '${tempDir.path}/original_${DateTime.now().millisecondsSinceEpoch}.pdf';
-      final pdfFile = File(pdfPath);
-      await pdfFile.writeAsBytes(originalPdf.content as List<int>);
+      CropData? cropData;
+      String? dynamicPdfName;
 
       // Parse crop coordinates data if available
-      CropData? cropData;
       if (cropCoordinatesJson != null) {
         try {
           final jsonString = utf8.decode(
             cropCoordinatesJson.content as List<int>,
           );
           cropData = CropData.fromJsonString(jsonString);
+          if (cropData.pdfFile.isNotEmpty) {
+            dynamicPdfName = cropData.pdfFile;
+          }
         } catch (e, stackTrace) {
           print('e: $e');
           print('Stack trace: $stackTrace');
         }
-      } else {
+      }
+
+      // 2. Locate the PDF file
+      ArchiveFile? targetPdfFile;
+
+      // Try finding the dynamic PDF name from JSON
+      if (dynamicPdfName != null) {
+        for (final file in archive) {
+          if (file.name == dynamicPdfName) {
+            targetPdfFile = file;
+            break;
+          }
+        }
+        // Normalize match (case insensitive try)
+        if (targetPdfFile == null) {
+          for (final file in archive) {
+            if (file.name.toLowerCase() == dynamicPdfName.toLowerCase()) {
+              targetPdfFile = file;
+              break;
+            }
+          }
+        }
+      }
+
+      // Fallback to original.pdf
+      if (targetPdfFile == null) {
+        targetPdfFile = originalPdf;
+      }
+
+      // Ultimate fallback: first PDF found
+      if (targetPdfFile == null) {
+        for (final file in archive) {
+          if (file.name.toLowerCase().endsWith('.pdf')) {
+            targetPdfFile = file;
+            break;
+          }
+        }
+      }
+
+      if (targetPdfFile == null) {
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        _showError(
+          'No PDF file found in book archive (expected $dynamicPdfName or original.pdf)',
+        );
         return;
+      }
+
+      // Extract the PDF to a temporary location
+      final tempDir = await getTemporaryDirectory();
+      // Use the actual filename if possible, otherwise a timestamped fallback, but sanitize it
+      final safePdfName = targetPdfFile.name.replaceAll(
+        RegExp(r'[^\w\.-]'),
+        '_',
+      );
+      final pdfPath =
+          '${tempDir.path}/${DateTime.now().millisecondsSinceEpoch}_$safePdfName';
+
+      final pdfFile = File(pdfPath);
+      await pdfFile.writeAsBytes(targetPdfFile.content as List<int>);
+
+      // Parse page contents if available
+      PageContent? pageContent;
+      if (pageContentsJson != null) {
+        try {
+          final jsonString = utf8.decode(pageContentsJson.content as List<int>);
+          pageContent = PageContent.fromJsonString(jsonString);
+        } catch (e) {
+          print('❌ (ZipDecoder) Failed to parse page_contents.json: $e');
+        }
       }
 
       if (!mounted) return;
@@ -784,6 +908,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
             dropboxPath: null,
             cropData: cropData,
             zipFilePath: zipPath, // Zip dosyasının yolunu sakla
+            pageContent: pageContent,
           ),
         );
         currentTabIndex = openTabs.length - 1;
@@ -800,37 +925,101 @@ class _FolderHomePageState extends State<FolderHomePage> {
           );
           await extractDir.create();
 
-          // Unzip specific files
-          final result = await Process.run('unzip', [
-            '-o', // overwrite
+          // Since we need to read crop coordinates first to find the PDF name,
+          // we should extract crop_coordinates.json first.
+
+          CropData? cropData;
+          String? dynamicPdfName;
+
+          // 1. Extract and parse crop_coordinates.json
+          final jsonPath = '${extractDir.path}/crop_coordinates.json';
+          final jsonFile = File(jsonPath);
+
+          // Try to unzip json first
+          await Process.run('unzip', [
+            '-o',
             zipPath,
-            'original.pdf',
             'crop_coordinates.json',
             '-d',
             extractDir.path,
           ]);
 
-          if (result.exitCode != 0) {
-            throw Exception('Unzip command failed: ${result.stderr}');
-          }
-
-          final pdfFile = File('${extractDir.path}/original.pdf');
-          if (!await pdfFile.exists()) {
-            if (!mounted) return;
-            Navigator.of(context).pop();
-            _showError('original.pdf not found in the book file');
-            return;
-          }
-
-          CropData? cropData;
-          final jsonFile = File('${extractDir.path}/crop_coordinates.json');
           if (await jsonFile.exists()) {
             try {
               final jsonString = await jsonFile.readAsString();
               cropData = CropData.fromJsonString(jsonString);
+              if (cropData.pdfFile.isNotEmpty) {
+                dynamicPdfName = cropData.pdfFile;
+              }
             } catch (e) {
               print('Error parsing crop data: $e');
             }
+          }
+
+          // 2. Determine PDF to extract
+          String pdfToExtract = dynamicPdfName ?? 'original.pdf';
+
+          // Unzip the PDF
+          await Process.run('unzip', [
+            '-o',
+            zipPath,
+            pdfToExtract,
+            '-d',
+            extractDir.path,
+          ]);
+
+          // Validations
+          var pdfFile = File('${extractDir.path}/$pdfToExtract');
+
+          // Fallback to original.pdf if dynamic failed
+          if (!await pdfFile.exists() && pdfToExtract != 'original.pdf') {
+            print('Dynamic PDF $pdfToExtract not found, trying original.pdf');
+            await Process.run('unzip', [
+              '-o',
+              zipPath,
+              'original.pdf',
+              '-d',
+              extractDir.path,
+            ]);
+            pdfFile = File('${extractDir.path}/original.pdf');
+          }
+
+          // Ultimate fallback (wildcard) - difficult with single command without knowing name
+          // Assuming one of the above worked.
+
+          if (!await pdfFile.exists()) {
+            if (!mounted) return;
+            Navigator.of(context).pop();
+            _showError(
+              'No PDF found in book file (tried $pdfToExtract and original.pdf)',
+            );
+            return;
+          }
+
+          // Already parsed cropData above
+
+          // Check for page_contents.json
+          PageContent? pageContent;
+          final pageContentFile = File('${extractDir.path}/page_contents.json');
+          print('🔍 Checking for content file at: ${pageContentFile.path}');
+
+          if (await pageContentFile.exists()) {
+            try {
+              final jsonString = await pageContentFile.readAsString();
+              print(
+                '📄 Found page_contents.json. Length: ${jsonString.length}',
+              );
+              // print('📄 Content snippet: ${jsonString.substring(0, min(100, jsonString.length))}');
+
+              pageContent = PageContent.fromJsonString(jsonString);
+              print(
+                '✅ Parsed PageContent. Pages with content: ${pageContent.pages.keys.join(', ')}',
+              );
+            } catch (e) {
+              print('❌ Error parsing page_contents.json: $e');
+            }
+          } else {
+            print('⚠️ page_contents.json not found in extracted directory.');
           }
 
           if (!mounted) return;
@@ -844,6 +1033,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
                 dropboxPath: null,
                 cropData: cropData,
                 zipFilePath: zipPath,
+                pageContent: pageContent,
               ),
             );
             currentTabIndex = openTabs.length - 1;
@@ -1789,6 +1979,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
                             zipFilePath: openTabs[currentTabIndex].zipFilePath,
                             pdfBytes: openTabs[currentTabIndex].pdfBytes,
                             zipBytes: openTabs[currentTabIndex].zipBytes,
+                            pageContent: openTabs[currentTabIndex].pageContent,
                           ),
                   ),
                 ),

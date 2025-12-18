@@ -28,7 +28,12 @@ class PdfViewerTopBar extends StatelessWidget {
     required this.currentPageTime,
     this.onBack,
     this.onGoToPage,
+    this.onShowPageContent, // [NEW]
+    this.hasPageContent = false, // [NEW]
   });
+
+  final VoidCallback? onShowPageContent;
+  final bool hasPageContent;
 
   @override
   Widget build(BuildContext context) {
@@ -223,6 +228,70 @@ class PdfViewerTopBar extends StatelessWidget {
           ),
 
           const SizedBox(width: 12),
+
+          const SizedBox(width: 12),
+
+          // Faydalı İçerikler Butonu
+          if (onShowPageContent != null)
+            Tooltip(
+              message: 'Faydalı İçerikler',
+              child: InkWell(
+                onTap: hasPageContent ? onShowPageContent : null,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: hasPageContent
+                        ? Theme.of(context).colorScheme.primaryContainer
+                        : Theme.of(context).colorScheme.surfaceContainerHighest
+                              .withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: hasPageContent
+                        ? [
+                            BoxShadow(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.primary.withValues(alpha: 0.2),
+                              blurRadius: 4,
+                              offset: const Offset(0, 1),
+                            ),
+                          ]
+                        : null,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.auto_awesome,
+                        size: 14,
+                        color: hasPageContent
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurfaceVariant
+                                  .withValues(alpha: 0.5),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        'İçerik',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: hasPageContent
+                              ? Theme.of(context).colorScheme.onPrimaryContainer
+                              : Theme.of(context).colorScheme.onSurfaceVariant
+                                    .withValues(alpha: 0.5),
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+          if (onShowPageContent != null) const SizedBox(width: 12),
 
           InkWell(
             onTap: () {

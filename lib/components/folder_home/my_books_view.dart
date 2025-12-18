@@ -60,8 +60,9 @@ class MyBooksView extends StatelessWidget {
     return GridView.builder(
       padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 6,
-        childAspectRatio: 0.75,
+        crossAxisCount: 5, // 6 -> 5 to make items wider
+        childAspectRatio:
+            0.70, // 0.75 -> 0.70 to make items taller (prevent bottom overflow)
         crossAxisSpacing: 16,
         mainAxisSpacing: 16,
       ),

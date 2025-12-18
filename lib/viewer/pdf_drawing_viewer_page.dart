@@ -11,12 +11,19 @@ import 'calculator_widget.dart';
 import 'scratchpad_widget.dart';
 import '../models/crop_data.dart';
 import 'page_time_tracker.dart';
+import '../models/page_content.dart'; // [NEW]
+import 'package:url_launcher/url_launcher_string.dart';
+import 'package:archive/archive.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 // Components
 import 'components/pdf_viewer_top_bar.dart';
 import 'components/right_thumbnail_sidebar.dart';
 import 'components/floating_tool_menu.dart';
 import 'components/analysis_result_dialog.dart';
+import 'components/video_player_dialog.dart'; // [NEW]
 
 // Services
 import 'services/image_capture_service.dart';
@@ -31,6 +38,7 @@ class PdfDrawingViewerPage extends StatefulWidget {
   final String? zipFilePath;
   final Uint8List? pdfBytes; // Web platformu için PDF bytes
   final Uint8List? zipBytes; // Web platformu için ZIP bytes
+  final PageContent? pageContent; // [NEW]
 
   const PdfDrawingViewerPage({
     super.key,
@@ -40,6 +48,7 @@ class PdfDrawingViewerPage extends StatefulWidget {
     this.zipFilePath,
     this.pdfBytes,
     this.zipBytes,
+    this.pageContent,
   });
 
   @override
@@ -383,6 +392,157 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
     _showSnackBar('📄 Sayfa $pageNumber\'e gidildi', Colors.green);
   }
 
+  void _showPageContentDialog(List<PageItem> items) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.auto_awesome, color: Colors.amber.shade700),
+                const SizedBox(width: 12),
+                const Text(
+                  'Faydalı İçerikler',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ...items.map((item) {
+              if (item is LinkItem) {
+                return ListTile(
+                  leading: const Icon(Icons.link, color: Colors.blue),
+                  title: Text(item.title),
+                  subtitle: Text(item.url),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _launchUrl(item.url);
+                  },
+                );
+              } else if (item is VideoItem) {
+                return ListTile(
+                  leading: const Icon(
+                    Icons.play_circle_fill,
+                    color: Colors.red,
+                  ),
+                  title: Text(item.filename),
+                  subtitle: const Text('Video'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _playVideo(item);
+                  },
+                );
+              }
+              return const SizedBox.shrink();
+            }).toList(),
+            const SizedBox(height: 24),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _launchUrl(String url) async {
+    try {
+      await launchUrlString(url);
+    } catch (e) {
+      _showSnackBar('Link açılamadı: $e', Colors.red);
+    }
+  }
+
+  Future<void> _playVideo(VideoItem item) async {
+    // Determine video path
+    String? localPath;
+
+    if (widget.zipFilePath != null) {
+      // Need to extract video from zip if not already extracted or accessible
+      // Since we don't have random access to zip entries easily without extracting,
+      // we should extract this specific file to temp
+      try {
+        _showAnalyzingDialog(); // Loading...
+
+        final tempDir = await getTemporaryDirectory();
+        final videoName = item.filename;
+        final targetPath = '${tempDir.path}/$videoName';
+        final targetFile = File(targetPath);
+
+        if (await targetFile.exists()) {
+          // Already extracted
+          localPath = targetPath;
+        } else {
+          // Extract from zip
+          // We need to read the zip again... this is inefficient if zip is large.
+          // Better optimization: keep zip archive open or cache.
+          // For now, valid implementation:
+          final bytes = await File(widget.zipFilePath!).readAsBytes();
+          final archive = ZipDecoder().decodeBytes(bytes);
+          final videoFile =
+              archive.findFile(item.path) ??
+              archive.findFile(
+                'videos/${item.filename}',
+              ); // Try both exact path and assumed path
+
+          if (videoFile != null) {
+            final data = videoFile.content as List<int>;
+            await targetFile.writeAsBytes(data);
+            localPath = targetPath;
+          }
+        }
+
+        if (mounted) Navigator.pop(context); // Close loading
+
+        if (localPath != null) {
+          // Open video player
+          _showVideoPlayer(localPath);
+        } else {
+          _showSnackBar('Video dosyası zip içinde bulunamadı', Colors.red);
+        }
+      } catch (e) {
+        if (mounted) Navigator.pop(context);
+        _showSnackBar('Video hazırlama hatası: $e', Colors.red);
+      }
+    } else {
+      _showSnackBar(
+        'Web veya byte-stream video oynatma henüz desteklenmiyor',
+        Colors.orange,
+      );
+    }
+  }
+
+  void _showVideoPlayer(String path) {
+    if (kIsWeb ||
+        (!Platform.isWindows && !Platform.isAndroid && !Platform.isIOS)) {
+      _showSnackBar('Bu platformda video oynatılamıyor', Colors.orange);
+      return;
+    }
+
+    // Basit dosya adı çıkarma
+    String filename = path.split(Platform.pathSeparator).last;
+    if (filename.length > 30) {
+      filename = '${filename.substring(0, 30)}...';
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => VideoPlayerDialog(videoPath: path, title: filename),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider.value(
@@ -399,6 +559,9 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                     }
 
                     final state = _drawingKey.currentState;
+                    final items =
+                        widget.pageContent?.pages[drawingProvider.currentPage];
+                    final hasContent = items != null && items.isNotEmpty;
 
                     if (state == null) {
                       return PdfViewerTopBar(
@@ -412,6 +575,10 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                         currentPageTime: '0sn',
                         onBack: widget.onBack,
                         onGoToPage: _showGoToPageDialog,
+                        onShowPageContent: widget.pageContent != null
+                            ? () => _showPageContentDialog(items ?? [])
+                            : null,
+                        hasPageContent: hasContent,
                       );
                     }
 
@@ -421,6 +588,14 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                         return AnimatedBuilder(
                           animation: state.transformationController,
                           builder: (context, _) {
+                            // Re-calculate for this builder scope if needed, or rely on outer calc
+                            // But we need to update hasContent here too if checking dynamically
+                            final items = widget
+                                .pageContent
+                                ?.pages[drawingProvider.currentPage];
+                            final hasContent =
+                                items != null && items.isNotEmpty;
+
                             return PdfViewerTopBar(
                               pdfPath: widget.pdfPath,
                               pdfController: _pdfController,
@@ -432,6 +607,10 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                               currentPageTime: pageTime,
                               onBack: widget.onBack,
                               onGoToPage: _showGoToPageDialog,
+                              onShowPageContent: widget.pageContent != null
+                                  ? () => _showPageContentDialog(items ?? [])
+                                  : null,
+                              hasPageContent: hasContent,
                             );
                           },
                         );
@@ -557,13 +736,13 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                           },
                         ),
                       ),
+
+                      // [REMOVED] Page Content Indicator (Moved to TopBar)
                     ],
                   ),
                 ),
               ],
             ),
-
-            // Loading overlay
             if (_isPdfLoading)
               Positioned.fill(
                 child: Container(

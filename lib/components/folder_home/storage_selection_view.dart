@@ -262,10 +262,10 @@ class StorageSelectionView extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontWeight: FontWeight.w600,
-                              fontSize: 12,
+                              fontSize: 11, // Reduced from 12
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 2), // Reduced from 4
                           Text(
                             '${file.addedAt.day}.${file.addedAt.month}.${file.addedAt.year}',
                             style: TextStyle(
