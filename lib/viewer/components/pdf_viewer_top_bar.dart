@@ -28,12 +28,16 @@ class PdfViewerTopBar extends StatelessWidget {
     required this.currentPageTime,
     this.onBack,
     this.onGoToPage,
-    this.onShowPageContent, // [NEW]
-    this.hasPageContent = false, // [NEW]
+    this.onShowPageContent,
+    this.hasPageContent = false,
+    this.onShowChapters, // [NEW]
+    this.hasChapters = false, // [NEW]
   });
 
   final VoidCallback? onShowPageContent;
   final bool hasPageContent;
+  final VoidCallback? onShowChapters;
+  final bool hasChapters;
 
   @override
   Widget build(BuildContext context) {
@@ -66,6 +70,31 @@ class PdfViewerTopBar extends StatelessWidget {
       child: Row(
         children: [
           // PDF İkonu
+          if (hasChapters) ...[
+            Tooltip(
+              message: 'İçindekiler',
+              child: InkWell(
+                onTap: onShowChapters,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.format_list_bulleted_rounded,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 20,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
+
           const SizedBox(width: 10),
           const Spacer(flex: 1),
 

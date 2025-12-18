@@ -27,9 +27,12 @@ import 'components/video_player_dialog.dart'; // [NEW]
 
 // Services
 import 'services/image_capture_service.dart';
+import '../services/toc_detector_service.dart'; // [NEW]
 
 import 'package:techatlas/viewer/drawing_provider.dart';
 import 'package:provider/provider.dart';
+
+import 'components/chapter_drawer.dart'; // [NEW]
 
 class PdfDrawingViewerPage extends StatefulWidget {
   final String pdfPath;
@@ -78,6 +81,11 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
   // Sidebar Position State
   Offset _sidebarPosition = const Offset(16, 10);
 
+  // TOC State
+  List<Chapter> _chapters = [];
+  bool _isTOCLoading = false;
+  final TOCDetectorService _tocDetector = TOCDetectorService();
+
   @override
   void initState() {
     super.initState();
@@ -109,12 +117,117 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
       if (mounted) {
         setState(() => _isPdfLoading = false);
       }
+
+      // Start TOC detection
+      _detectTOC();
     } catch (e) {
       print('❌ Error loading PDF: $e');
       if (mounted) {
         setState(() => _isPdfLoading = false);
       }
     }
+  }
+
+  Future<void> _detectTOC() async {
+    if (!mounted) return;
+    // Don't show loading on UI for this background task
+
+    try {
+      final doc = await _pdfDocument;
+      // Scan for TOC
+      final chapters = await _tocDetector.scanForTOC(doc);
+
+      if (mounted && chapters.isNotEmpty) {
+        setState(() {
+          _chapters = chapters;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✨ ${chapters.length} bölümlü içindekiler bulundu!'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: 'Göster',
+              textColor: Colors.white,
+              onPressed: _openChapterDrawer,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print('TOC Detection error: $e');
+    }
+  }
+
+  void _openChapterDrawer() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.4,
+        maxChildSize: 0.95,
+        builder: (_, controller) => Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E1E1E),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 20),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const Text(
+                'İçindekiler',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView.separated(
+                  controller: controller,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  itemCount: _chapters.length,
+                  separatorBuilder: (_, __) =>
+                      const Divider(color: Colors.white10),
+                  itemBuilder: (context, index) {
+                    final chapter = _chapters[index];
+                    return ListTile(
+                      title: Text(
+                        chapter.title,
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      trailing: Text(
+                        '${chapter.pageNumber}',
+                        style: const TextStyle(color: Colors.white54),
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        _pdfController.jumpToPage(chapter.pageNumber);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -579,6 +692,10 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                             ? () => _showPageContentDialog(items ?? [])
                             : null,
                         hasPageContent: hasContent,
+                        hasChapters: _chapters.isNotEmpty,
+                        onShowChapters: _chapters.isNotEmpty
+                            ? _openChapterDrawer
+                            : null,
                       );
                     }
 
@@ -611,6 +728,10 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                                   ? () => _showPageContentDialog(items ?? [])
                                   : null,
                               hasPageContent: hasContent,
+                              hasChapters: _chapters.isNotEmpty,
+                              onShowChapters: _chapters.isNotEmpty
+                                  ? _openChapterDrawer
+                                  : null,
                             );
                           },
                         );
