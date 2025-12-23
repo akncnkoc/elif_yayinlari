@@ -277,6 +277,9 @@ class _VerticalToolSidebarState extends State<VerticalToolSidebar> {
                           },
                         ),
 
+                        const SizedBox(height: 8),
+                        const SizedBox(height: 8),
+
                         const SizedBox(height: 12),
                         Container(
                           height: 1,

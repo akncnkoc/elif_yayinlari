@@ -28,6 +28,7 @@ import 'components/video_player_dialog.dart'; // [NEW]
 // Services
 import 'services/image_capture_service.dart';
 import '../services/toc_detector_service.dart'; // [NEW]
+import '../overlay_drawing/widgets/widget_overlay_manager.dart'; // [NEW]
 
 import 'package:techatlas/viewer/drawing_provider.dart';
 import 'package:provider/provider.dart';
@@ -63,6 +64,8 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
   late Future<PdfDocument> _pdfDocument;
   final GlobalKey<PdfViewerWithDrawingState> _drawingKey = GlobalKey();
   final GlobalKey _canvasKey = GlobalKey();
+  final GlobalKey<WidgetOverlayManagerState> _widgetOverlayKey =
+      GlobalKey(); // [NEW]
 
   // Soru Çözücü Service
   final SoruCozucuService _service = SoruCozucuService();
@@ -141,19 +144,6 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
         setState(() {
           _chapters = chapters;
         });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✨ ${chapters.length} bölümlü içindekiler bulundu!'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 4),
-            action: SnackBarAction(
-              label: 'Göster',
-              textColor: Colors.white,
-              onPressed: _openChapterDrawer,
-            ),
-          ),
-        );
       }
     } catch (e) {
       print('TOC Detection error: $e');
@@ -782,6 +772,11 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                         ),
                       ),
 
+                      // [NEW] Widget Overlay Layer (Above PDF, below Sidebar)
+                      Positioned.fill(
+                        child: WidgetOverlayManager(key: _widgetOverlayKey),
+                      ),
+
                       // Floating Panel (Overlay)
                       // Vertical Tool Sidebar (Draggable)
                       if (_drawingKey.currentState != null)
@@ -829,6 +824,10 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                         FloatingToolMenu(
                           onOpenCalculator: _openCalculator,
                           onOpenScratchpad: _openScratchpad,
+                          onToolSelected: (toolId) {
+                            _widgetOverlayKey.currentState?.addWidget(toolId);
+                            _toggleToolMenu(); // Close menu after selection
+                          },
                         ),
 
                       // Calculator Widget (Overlay)

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../utils/shape_recognizer.dart';
 
 /// Çizim noktası
 class DrawPoint {
@@ -21,12 +22,14 @@ class DrawStroke {
   final Color color;
   final double width;
   final bool isEraser;
+  final Path? recognizedPath; // [NEW] Recognized shape path
 
   DrawStroke({
     required this.points,
     required this.color,
     required this.width,
     this.isEraser = false,
+    this.recognizedPath,
   });
 }
 
@@ -35,12 +38,14 @@ class DrawingCanvas extends StatefulWidget {
   final Color color;
   final double strokeWidth;
   final bool isEraser;
+  final bool smartDrawingEnabled; // [NEW] Control from outside if needed
 
   const DrawingCanvas({
     super.key,
     required this.color,
     required this.strokeWidth,
     this.isEraser = false,
+    this.smartDrawingEnabled = true,
   });
 
   @override
@@ -97,12 +102,24 @@ class DrawingCanvasState extends State<DrawingCanvas> {
   void _onPanEnd(DragEndDetails details) {
     setState(() {
       if (_currentPoints.isNotEmpty) {
+        // [NEW] Smart Shape Recognition
+        Path? recognizedPath;
+        if (widget.smartDrawingEnabled && !widget.isEraser) {
+          final points = _currentPoints.map((dp) => dp.offset).toList();
+          final shape = ShapeRecognizer.recognize(points);
+          if (shape.type != RecognizedShapeType.none) {
+            recognizedPath = shape.path;
+            debugPrint('✨ Shape Recognized: ${shape.type}');
+          }
+        }
+
         _strokes.add(
           DrawStroke(
             points: List.from(_currentPoints),
             color: widget.color,
             width: widget.strokeWidth,
             isEraser: widget.isEraser,
+            recognizedPath: recognizedPath,
           ),
         );
         _currentPoints = [];
@@ -152,16 +169,55 @@ class DrawingPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     // Tamamlanmış stroke'ları çiz
     for (final stroke in strokes) {
-      _drawStroke(canvas, stroke.points, stroke.color, stroke.width, stroke.isEraser);
+      if (stroke.recognizedPath != null) {
+        // [NEW] Draw recognized geometric shape
+        _drawRecognizedShape(
+          canvas,
+          stroke.recognizedPath!,
+          stroke.color,
+          stroke.width,
+        );
+      } else {
+        // Freehand drawing
+        _drawStroke(
+          canvas,
+          stroke.points,
+          stroke.color,
+          stroke.width,
+          stroke.isEraser,
+        );
+      }
     }
 
-    // Aktif stroke'u çiz
+    // Aktif stroke'u çiz (her zaman freehand - anlık feedback için)
     if (currentPoints.isNotEmpty) {
       _drawStroke(canvas, currentPoints, currentColor, currentWidth, isEraser);
     }
   }
 
-  void _drawStroke(Canvas canvas, List<DrawPoint> points, Color color, double width, bool isEraser) {
+  void _drawRecognizedShape(
+    Canvas canvas,
+    Path path,
+    Color color,
+    double width,
+  ) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = width
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+
+    canvas.drawPath(path, paint);
+  }
+
+  void _drawStroke(
+    Canvas canvas,
+    List<DrawPoint> points,
+    Color color,
+    double width,
+    bool isEraser,
+  ) {
     if (points.isEmpty) return;
 
     final paint = Paint()
@@ -186,10 +242,7 @@ class DrawingPainter extends CustomPainter {
       final p2 = points[i].offset;
 
       // Smooth curve için quadratic bezier
-      final midPoint = Offset(
-        (p1.dx + p2.dx) / 2,
-        (p1.dy + p2.dy) / 2,
-      );
+      final midPoint = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
 
       path.quadraticBezierTo(p1.dx, p1.dy, midPoint.dx, midPoint.dy);
     }
@@ -205,6 +258,6 @@ class DrawingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(DrawingPainter oldDelegate) {
-   return true;
+    return true;
   }
 }

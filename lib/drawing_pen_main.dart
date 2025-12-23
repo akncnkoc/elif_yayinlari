@@ -21,6 +21,7 @@ import 'overlay_drawing/modes/shapes_3d_mode.dart';
 import 'services/bluetooth_input_handler.dart';
 import 'services/virtual_keyboard_service.dart';
 import 'widgets/virtual_keyboard.dart';
+// import 'overlay_drawing/widgets/widget_overlay_manager.dart'; // [NEW]
 
 @pragma('vm:entry-point')
 void drawingPenMain() {
@@ -675,6 +676,7 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
                       onClear: () {},
                       onUndo: () {},
                       onClose: () {},
+                      onToolSelected: (toolId) {},
                     ),
                   ),
                 ),
@@ -722,6 +724,9 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
                               Platform.isMacOS)) {
                         await windowManager.close();
                       }
+                    },
+                    onToolSelected: (toolId) {
+                      // Placeholder
                     },
                   ),
                 ),

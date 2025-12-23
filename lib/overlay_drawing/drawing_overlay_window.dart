@@ -67,6 +67,7 @@ class _DrawingOverlayWindowState extends State<DrawingOverlayWindow> {
               onClose: () {
                 Navigator.of(context).pop();
               },
+              onToolSelected: (toolId) {},
             ),
           ),
         ],

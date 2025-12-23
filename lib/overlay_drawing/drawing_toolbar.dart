@@ -13,6 +13,8 @@ class DrawingToolbar extends StatefulWidget {
   final VoidCallback onClear;
   final VoidCallback onUndo;
   final VoidCallback onClose;
+  // [NEW] Callback for tool selection
+  final Function(String) onToolSelected;
 
   const DrawingToolbar({
     super.key,
@@ -27,6 +29,7 @@ class DrawingToolbar extends StatefulWidget {
     required this.onClear,
     required this.onUndo,
     required this.onClose,
+    required this.onToolSelected,
   });
 
   @override
@@ -36,6 +39,7 @@ class DrawingToolbar extends StatefulWidget {
 class _DrawingToolbarState extends State<DrawingToolbar> {
   bool _showColorPicker = false;
   bool _showSizePicker = false;
+  bool _showToolsPicker = false; // [NEW] Tools menu toggle
 
   // 24 renk paleti (Fatih Kalem gibi)
   static const List<Color> _colors = [
@@ -114,6 +118,25 @@ class _DrawingToolbarState extends State<DrawingToolbar> {
                 const Divider(height: 1),
                 const SizedBox(height: 8),
 
+                // [NEW] Widget Tools Menu Toggle
+                _ToolButton(
+                  icon: Icons.widgets_rounded,
+                  tooltip: 'Araçlar',
+                  isSelected: _showToolsPicker,
+                  onPressed: () {
+                    setState(() {
+                      _showToolsPicker = !_showToolsPicker;
+                      if (_showToolsPicker) {
+                        _showColorPicker = false;
+                        _showSizePicker = false;
+                      }
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+                const Divider(height: 1),
+                const SizedBox(height: 8),
+
                 // Kalem/Silgi toggle
                 _ToolButton(
                   icon: widget.isEraser
@@ -145,7 +168,10 @@ class _DrawingToolbarState extends State<DrawingToolbar> {
                     onPressed: () {
                       setState(() {
                         _showColorPicker = !_showColorPicker;
-                        if (_showColorPicker) _showSizePicker = false;
+                        if (_showColorPicker) {
+                          _showSizePicker = false;
+                          _showToolsPicker = false;
+                        }
                       });
                     },
                   ),
@@ -159,7 +185,10 @@ class _DrawingToolbarState extends State<DrawingToolbar> {
                   onPressed: () {
                     setState(() {
                       _showSizePicker = !_showSizePicker;
-                      if (_showSizePicker) _showColorPicker = false;
+                      if (_showSizePicker) {
+                        _showColorPicker = false;
+                        _showToolsPicker = false;
+                      }
                     });
                   },
                 ),
@@ -187,6 +216,51 @@ class _DrawingToolbarState extends State<DrawingToolbar> {
           ),
 
           const SizedBox(width: 12),
+
+          // [NEW] Tools Picker Panel
+          if (_showToolsPicker)
+            Container(
+              width: 200, // Slightly wider for icon + text
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.95),
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 12,
+                    offset: const Offset(2, 2),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Araçlar',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildToolMenuItem(
+                    Icons.calculate_rounded,
+                    'Hesap Makinesi',
+                    'calculator',
+                  ),
+                  _buildToolMenuItem(
+                    Icons.casino_rounded,
+                    'Zar / Kura',
+                    'dice',
+                  ),
+                  _buildToolMenuItem(
+                    Icons.science_rounded,
+                    'Periyodik Tablo',
+                    'periodic_table',
+                  ),
+                  _buildToolMenuItem(Icons.map_rounded, 'Harita', 'map'),
+                ],
+              ),
+            ),
 
           // Renk paleti (popup)
           if (_showColorPicker)
@@ -335,6 +409,28 @@ class _DrawingToolbarState extends State<DrawingToolbar> {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildToolMenuItem(IconData icon, String label, String id) {
+    return InkWell(
+      onTap: () {
+        widget.onToolSelected(id);
+        setState(() {
+          _showToolsPicker = false;
+        });
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        child: Row(
+          children: [
+            Icon(icon, size: 24, color: Colors.grey.shade800),
+            const SizedBox(width: 12),
+            Text(label, style: const TextStyle(fontSize: 14)),
+          ],
+        ),
       ),
     );
   }
