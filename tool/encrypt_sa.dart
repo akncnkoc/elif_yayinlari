@@ -11,7 +11,6 @@ final ivString = 'TechAtlasInitVec'; // 16 chars
 void main() async {
   final file = File('service_account.json');
   if (!await file.exists()) {
-    print('Error: service_account.json not found in root.');
     return;
   }
 
@@ -30,8 +29,4 @@ void main() async {
   }
 
   await outFile.writeAsBytes(encrypted.bytes);
-
-  print('✅ Encrypted service_account.json to assets/service_account.enc');
-  print('Key: $keyString');
-  print('IV: $ivString');
 }

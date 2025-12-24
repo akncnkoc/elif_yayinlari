@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 
 class FloatingToolMenu extends StatelessWidget {
-  final VoidCallback
-  onOpenCalculator; // Keep for backward compatibility if needed, or remove
+  final VoidCallback onOpenCalculator; // Keep for backward compatibility
   final VoidCallback onOpenScratchpad;
-  final Function(String)? onToolSelected; // [NEW]
+  final Function(String)? onToolSelected;
 
   const FloatingToolMenu({
     super.key,
@@ -17,78 +16,149 @@ class FloatingToolMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     return Positioned(
       right: 16,
-      bottom: 80, // Moved to bottom right
+      bottom: 80,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: Material(
           elevation: 4,
           borderRadius: BorderRadius.circular(12),
-          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.95),
+          color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.98),
           child: Container(
-            width: 180, // Slightly wider
+            width: 240,
+            constraints: const BoxConstraints(maxHeight: 500),
             padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildMenuItem(
-                  context,
-                  icon: Icons.calculate_rounded,
-                  label: 'Hesap Makinesi',
-                  color: Colors.orange,
-                  onTap: () => onToolSelected?.call('calculator'),
-                ),
-                _buildDivider(context),
-                _buildMenuItem(
-                  context,
-                  icon: Icons.casino_rounded,
-                  label: 'Zar / Kura',
-                  color: Colors.purple,
-                  onTap: () => onToolSelected?.call('dice'),
-                ),
-                _buildDivider(context),
-                _buildMenuItem(
-                  context,
-                  icon: Icons.science_rounded,
-                  label: 'Periyodik Tablo',
-                  color: Colors.green,
-                  onTap: () => onToolSelected?.call('periodic_table'),
-                ),
-                _buildDivider(context),
-                _buildMenuItem(
-                  context,
-                  icon: Icons.map_rounded,
-                  label: 'Harita',
-                  color: Colors.blue,
-                  onTap: () => onToolSelected?.call('map'),
-                ),
-                _buildDivider(context),
-                _buildMenuItem(
-                  context,
-                  icon: Icons.translate_rounded,
-                  label: 'Sözlük & Çeviri',
-                  color: Colors.indigo,
-                  onTap: () => onToolSelected?.call('dictionary'),
-                ),
-                _buildDivider(context),
-                _buildMenuItem(
-                  context,
-                  icon: Icons.piano_rounded,
-                  label: 'Piyano',
-                  color: Colors.pink,
-                  onTap: () => onToolSelected?.call('piano'),
-                ),
-                _buildDivider(context),
-                _buildMenuItem(
-                  context,
-                  icon: Icons.edit_note_rounded,
-                  label: 'Not Defteri',
-                  color: Theme.of(context).colorScheme.secondary,
-                  onTap: onOpenScratchpad,
-                ),
-              ],
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildGroup(
+                    context,
+                    title: 'Ders Araçları',
+                    icon: Icons.school_rounded,
+                    children: [
+                      _buildMenuItem(
+                        context,
+                        icon: Icons.science,
+                        label: 'Periyodik Tablo',
+                        color: Colors.green,
+                        onTap: () => onToolSelected?.call('periodic_table'),
+                      ),
+                      _buildMenuItem(
+                        context,
+                        icon: Icons.wb_sunny_rounded,
+                        label: 'Güneş Sistemi',
+                        color: Colors.deepPurple,
+                        onTap: () => onToolSelected?.call('solar_system'),
+                      ),
+                      _buildMenuItem(
+                        context,
+                        icon: Icons.accessibility_new_rounded,
+                        label: 'İnsan Vücudu',
+                        color: Colors.blueGrey,
+                        onTap: () => onToolSelected?.call('anatomy'),
+                      ),
+                      _buildMenuItem(
+                        context,
+                        icon: Icons.map,
+                        label: 'Harita',
+                        color: Colors.blue,
+                        onTap: () => onToolSelected?.call('map'),
+                      ),
+                    ],
+                  ),
+                  _buildDivider(context),
+                  _buildGroup(
+                    context,
+                    title: 'Genel Araçlar',
+                    icon: Icons.apps_rounded,
+                    children: [
+                      _buildMenuItem(
+                        context,
+                        icon: Icons.calculate,
+                        label: 'Hesap Makinesi',
+                        color: Colors.orange,
+                        onTap: () => onToolSelected?.call('calculator'),
+                      ),
+                      _buildMenuItem(
+                        context,
+                        icon: Icons.translate,
+                        label: 'Sözlük & Çeviri',
+                        color: Colors.indigo,
+                        onTap: () => onToolSelected?.call('dictionary'),
+                      ),
+                      _buildMenuItem(
+                        context,
+                        icon: Icons.swap_vert_circle_outlined,
+                        label: 'Birim Çevirici',
+                        color: Colors.teal,
+                        onTap: () => onToolSelected?.call('unit_converter'),
+                      ),
+                      _buildMenuItem(
+                        context,
+                        icon: Icons.edit_note,
+                        label: 'Not Defteri',
+                        color: Colors.grey,
+                        onTap: onOpenScratchpad,
+                      ),
+                    ],
+                  ),
+                  _buildDivider(context),
+                  _buildGroup(
+                    context,
+                    title: 'Aktivite & Oyun',
+                    icon: Icons.sports_esports,
+                    children: [
+                      _buildMenuItem(
+                        context,
+                        icon: Icons.piano,
+                        label: 'Piyano',
+                        color: Colors.pink,
+                        onTap: () => onToolSelected?.call('piano'),
+                      ),
+                      _buildMenuItem(
+                        context,
+                        icon: Icons.casino,
+                        label: 'Zar / Kura',
+                        color: Colors.purple,
+                        onTap: () => onToolSelected?.call('dice'),
+                      ),
+                      _buildMenuItem(
+                        context,
+                        icon: Icons.code,
+                        label: 'Kodlama Atölyesi',
+                        color: Colors.orangeAccent,
+                        onTap: () => onToolSelected?.call('coding_blocks'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildGroup(
+    BuildContext context, {
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        leading: Icon(icon, color: Colors.black54, size: 20),
+        title: Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+        ),
+        childrenPadding: EdgeInsets.zero,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+        dense: true,
+        // initiallyExpanded: false,
+        children: children,
       ),
     );
   }
@@ -98,7 +168,7 @@ class FloatingToolMenu extends StatelessWidget {
       height: 1,
       indent: 10,
       endIndent: 10,
-      color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+      color: Theme.of(context).dividerColor.withValues(alpha: 0.1),
     );
   }
 
@@ -111,36 +181,22 @@ class FloatingToolMenu extends StatelessWidget {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 10,
-          vertical: 10, // Increased touch area
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(6),
+              padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    color.withValues(alpha: 0.15),
-                    color.withValues(alpha: 0.08),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(6),
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(4),
               ),
-              child: Icon(icon, color: color, size: 18),
+              child: Icon(icon, color: color, size: 16),
             ),
             const SizedBox(width: 12),
             Text(
               label,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.2,
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
             ),
           ],
         ),

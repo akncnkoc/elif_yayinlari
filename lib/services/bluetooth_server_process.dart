@@ -18,7 +18,6 @@ class BluetoothServerProcess {
   /// Start the Bluetooth server process
   Future<bool> startServer() async {
     if (_isRunning) {
-      debugPrint('❌ Bluetooth server already running');
       return false;
     }
 
@@ -27,15 +26,13 @@ class BluetoothServerProcess {
       final exePath = _getBluetoothServerPath();
 
       if (!File(exePath).existsSync()) {
-        debugPrint('❌ Bluetooth server executable not found: $exePath');
         _eventController.add({
           'type': 'error',
-          'error': 'Bluetooth server not found. Please rebuild the application.',
+          'error':
+              'Bluetooth server not found. Please rebuild the application.',
         });
         return false;
       }
-
-      debugPrint('🚀 Starting Bluetooth server: $exePath');
 
       // Start the process
       _process = await Process.start(
@@ -51,34 +48,24 @@ class BluetoothServerProcess {
           .transform(utf8.decoder)
           .transform(const LineSplitter())
           .listen((line) {
-        debugPrint('📡 Bluetooth server: $line');
-        _handleServerOutput(line);
-      });
+            _handleServerOutput(line);
+          });
 
       // Listen to stderr
       _process!.stderr
           .transform(utf8.decoder)
           .transform(const LineSplitter())
-          .listen((line) {
-        debugPrint('❌ Bluetooth server error: $line');
-      });
+          .listen((line) {});
 
       // Listen to process exit
       _process!.exitCode.then((exitCode) {
-        debugPrint('🛑 Bluetooth server exited with code: $exitCode');
         _isRunning = false;
-        _eventController.add({
-          'type': 'serverStopped',
-        });
+        _eventController.add({'type': 'serverStopped'});
       });
 
       return true;
     } catch (e) {
-      debugPrint('❌ Failed to start Bluetooth server: $e');
-      _eventController.add({
-        'type': 'error',
-        'error': e.toString(),
-      });
+      _eventController.add({'type': 'error', 'error': e.toString()});
       return false;
     }
   }
@@ -98,9 +85,7 @@ class BluetoothServerProcess {
           _process!.kill();
         }
       });
-    } catch (e) {
-      debugPrint('❌ Error stopping Bluetooth server: $e');
-    }
+    } catch (e) {}
 
     _isRunning = false;
   }
@@ -111,9 +96,7 @@ class BluetoothServerProcess {
 
     try {
       _process!.stdin.writeln('SEND:$message');
-    } catch (e) {
-      debugPrint('❌ Error sending message: $e');
-    }
+    } catch (e) {}
   }
 
   /// Check if Bluetooth is available
@@ -176,18 +159,10 @@ class BluetoothServerProcess {
       });
     } else if (line.startsWith('MESSAGE_RECEIVED:')) {
       final message = line.substring(17);
-      _eventController.add({
-        'type': 'messageReceived',
-        'message': message,
-      });
+      _eventController.add({'type': 'messageReceived', 'message': message});
     } else if (line.startsWith('ERROR:')) {
       final error = line.substring(6);
-      _eventController.add({
-        'type': 'error',
-        'error': error,
-      });
-    } else if (line == 'READY') {
-      debugPrint('✅ Bluetooth server is ready');
-    }
+      _eventController.add({'type': 'error', 'error': error});
+    } else if (line == 'READY') {}
   }
 }

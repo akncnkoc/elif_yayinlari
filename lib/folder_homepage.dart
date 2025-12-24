@@ -103,13 +103,10 @@ class _FolderHomePageState extends State<FolderHomePage> {
     if (kIsWeb) return; // No updates for web
 
     try {
-      print('🔄 Checking for updates (FolderHomePage)...');
       final updateService = UpdateService();
       final updateInfo = await updateService.checkForUpdates();
 
       if (updateInfo != null) {
-        print('✨ Update available: ${updateInfo.version}');
-
         if (!mounted) return;
 
         showDialog(
@@ -117,12 +114,8 @@ class _FolderHomePageState extends State<FolderHomePage> {
           barrierDismissible: false,
           builder: (context) => UpdateDialog(updateInfo: updateInfo),
         );
-      } else {
-        print('✅ App is up to date');
-      }
-    } catch (e) {
-      print('❌ Update check failed: $e');
-    }
+      } else {}
+    } catch (e) {}
   }
 
   @override
@@ -169,18 +162,16 @@ class _FolderHomePageState extends State<FolderHomePage> {
           if (isFullScreen) {
             if (_isKeyboardVisible) {
               // Klavye açıldı - ekranın üstte kalmamasını sağla
-              debugPrint('⌨️ Ekran klavyesi algılandı (Ana uygulama)');
+
               // Ana uygulamada alwaysOnTop kullanmıyoruz ancak
               // gerekirse burada ek ayarlar yapılabilir
             } else {
               // Klavye kapandı
-              debugPrint('⌨️ Ekran klavyesi kapandı (Ana uygulama)');
             }
           }
         }
       } catch (e) {
         // Hata oluşursa sessizce devam et
-        debugPrint('Ekran klavyesi kontrolü hatası: $e');
       }
     }
   }
@@ -681,12 +672,8 @@ class _FolderHomePageState extends State<FolderHomePage> {
           if (cropData.pdfFile.isNotEmpty) {
             dynamicPdfName = cropData.pdfFile;
           }
-        } catch (e) {
-          print('⚠️ Failed to parse crop_coordinates.json: $e');
-        }
-      } else {
-        print('⚠️ No crop_coordinates.json found in ZIP');
-      }
+        } catch (e) {}
+      } else {}
 
       // 2. Locate the PDF file
       ArchiveFile? targetPdfFile;
@@ -743,9 +730,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
         try {
           final jsonString = utf8.decode(pageContentsJson.content as List<int>);
           pageContent = PageContent.fromJsonString(jsonString);
-        } catch (e) {
-          print('⚠️ Failed to parse page_contents.json: $e');
-        }
+        } catch (e) {}
       }
 
       if (!mounted) return;
@@ -796,11 +781,10 @@ class _FolderHomePageState extends State<FolderHomePage> {
 
       for (final file in archive) {
         final lowerName = file.name.toLowerCase();
-        // print('📂 File: $lowerName'); // Debug
+        //  // Debug
         if (lowerName.endsWith('crop_coordinates.json')) {
           cropCoordinatesJson = file;
         } else if (lowerName.endsWith('page_contents.json')) {
-          print('✅ Found content file: ${file.name}');
           pageContentsJson = file;
         } else if (lowerName == 'original.pdf') {
           originalPdf = file;
@@ -820,10 +804,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
           if (cropData.pdfFile.isNotEmpty) {
             dynamicPdfName = cropData.pdfFile;
           }
-        } catch (e, stackTrace) {
-          print('e: $e');
-          print('Stack trace: $stackTrace');
-        }
+        } catch (e, stackTrace) {}
       }
 
       // 2. Locate the PDF file
@@ -891,9 +872,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
         try {
           final jsonString = utf8.decode(pageContentsJson.content as List<int>);
           pageContent = PageContent.fromJsonString(jsonString);
-        } catch (e) {
-          print('❌ (ZipDecoder) Failed to parse page_contents.json: $e');
-        }
+        } catch (e) {}
       }
 
       if (!mounted) return;
@@ -915,7 +894,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
         showFolderBrowser = false;
       });
     } catch (e) {
-      print('ZipDecoder failed: $e');
       // Fallback to system unzip (for LZMA/method 14 support)
       if (Platform.isLinux || Platform.isMacOS) {
         try {
@@ -951,9 +929,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
               if (cropData.pdfFile.isNotEmpty) {
                 dynamicPdfName = cropData.pdfFile;
               }
-            } catch (e) {
-              print('Error parsing crop data: $e');
-            }
+            } catch (e) {}
           }
 
           // 2. Determine PDF to extract
@@ -973,7 +949,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
 
           // Fallback to original.pdf if dynamic failed
           if (!await pdfFile.exists() && pdfToExtract != 'original.pdf') {
-            print('Dynamic PDF $pdfToExtract not found, trying original.pdf');
             await Process.run('unzip', [
               '-o',
               zipPath,
@@ -1001,7 +976,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
           // Check for page_contents.json
           PageContent? pageContent;
           final pageContentFile = File('${extractDir.path}/page_contents.json');
-          print('🔍 Checking for content file at: ${pageContentFile.path}');
 
           if (await pageContentFile.exists()) {
             try {
@@ -1009,18 +983,14 @@ class _FolderHomePageState extends State<FolderHomePage> {
               print(
                 '📄 Found page_contents.json. Length: ${jsonString.length}',
               );
-              // print('📄 Content snippet: ${jsonString.substring(0, min(100, jsonString.length))}');
+              //
 
               pageContent = PageContent.fromJsonString(jsonString);
               print(
                 '✅ Parsed PageContent. Pages with content: ${pageContent.pages.keys.join(', ')}',
               );
-            } catch (e) {
-              print('❌ Error parsing page_contents.json: $e');
-            }
-          } else {
-            print('⚠️ page_contents.json not found in extracted directory.');
-          }
+            } catch (e) {}
+          } else {}
 
           if (!mounted) return;
           Navigator.of(context).pop();
@@ -1040,9 +1010,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
             showFolderBrowser = false;
           });
           return;
-        } catch (unzipError) {
-          print('System unzip failed: $unzipError');
-        }
+        } catch (unzipError) {}
       }
 
       if (!mounted) return;
@@ -1517,7 +1485,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
   }
 
   void _cancelDownload(String bookId) {
-    print('🚫 Cancelling download for book: $bookId');
     setState(() {
       _downloadCancelFlags[bookId] = true;
       _downloadingBooks.remove(bookId);
@@ -1538,10 +1505,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
   }
 
   void _startDownloadOrQueue(gdrive.DriveItem item) {
-    print('📥 Download request for: ${item.name}');
-    print('📊 Current downloads: ${_downloadingBooks.length}');
-    print('📋 Queue length: ${_downloadQueue.length}');
-
     // Check if already in queue
     if (_downloadQueue.any((i) => i.id == item.id)) {
       _showError('Bu kitap zaten kuyrukta.');
@@ -1550,7 +1513,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
 
     // If max concurrent downloads reached, add to queue
     if (_downloadingBooks.length >= _maxConcurrentDownloads) {
-      print('⏸️ Max downloads reached, adding to queue');
       setState(() {
         _downloadQueue.add(item);
       });
@@ -1561,7 +1523,6 @@ class _FolderHomePageState extends State<FolderHomePage> {
         ),
       );
     } else {
-      print('▶️ Starting download immediately');
       _downloadBook(item);
     }
   }

@@ -21,15 +21,10 @@ class GoogleDriveAuth {
   // Initialize service account authentication
   Future<void> initialize() async {
     if (_isInitialized) {
-      debugPrint('GoogleDriveAuth already initialized');
       return;
     }
 
     try {
-      debugPrint('🔐 Initializing Google Drive service account auth...');
-      debugPrint('🕒 System Time: ${DateTime.now()}');
-      debugPrint('🕒 System Time (UTC): ${DateTime.now().toUtc()}');
-
       // Key and IV for decryption (Must match encryption script)
       final keyString = 'TechAtlasSecureKey2025!StartNow.'; // 32 chars
       final ivString = 'TechAtlasInitVec'; // 16 chars
@@ -55,10 +50,7 @@ class GoogleDriveAuth {
 
         final encrypted = encrypt.Encrypted(encryptedBytes);
         credentialsJson = encrypter.decrypt(encrypted, iv: iv);
-
-        debugPrint('✅ Credentials decrypted successfully');
       } catch (e) {
-        debugPrint('❌ Failed to load/decrypt credentials: $e');
         rethrow;
       }
 
@@ -69,20 +61,17 @@ class GoogleDriveAuth {
       if (jsonMap.containsKey('private_key')) {
         String key = jsonMap['private_key'] as String;
 
-        debugPrint('🔑 Private key found. Length: ${key.length}');
         debugPrint(
           '🔑 Key starts with: ${key.substring(0, math.min(30, key.length))}...',
         );
 
         // 1. Handle double escaped newlines (literal \n)
         if (key.contains(r'\n')) {
-          debugPrint('🔧 Fixing double escaped newlines (literal \\n)...');
           key = key.replaceAll(r'\n', '\n');
         }
 
         // 2. Remove carriage returns
         if (key.contains('\r')) {
-          debugPrint('🔧 Removing carriage returns...');
           key = key.replaceAll('\r', '');
         }
 
@@ -97,7 +86,6 @@ class GoogleDriveAuth {
         // We should try to insert newlines if they are missing after header/before footer
         if (!key.contains('\n') &&
             key.contains('-----BEGIN PRIVATE KEY-----')) {
-          debugPrint('🔧 Key appears to be one line. Attempting to format...');
           key = key.replaceAll(
             '-----BEGIN PRIVATE KEY-----',
             '-----BEGIN PRIVATE KEY-----\n',
@@ -113,8 +101,6 @@ class GoogleDriveAuth {
 
       final credentials = auth.ServiceAccountCredentials.fromJson(jsonMap);
 
-      debugPrint('✅ Service account email: ${credentials.email}');
-
       // Create authenticated client with Drive API scopes
       final scopes = [
         drive.DriveApi.driveScope,
@@ -124,10 +110,7 @@ class GoogleDriveAuth {
 
       _authClient = await auth_io.clientViaServiceAccount(credentials, scopes);
       _isInitialized = true;
-
-      debugPrint('✅ Google DriveAuth initialized successfully');
     } catch (e) {
-      debugPrint('❌ Error initializing Google Drive Auth: $e');
       _isInitialized = false;
       rethrow;
     }
@@ -139,7 +122,6 @@ class GoogleDriveAuth {
   // Get authenticated HTTP client
   auth.AuthClient? getAuthClient() {
     if (!isAuthenticated) {
-      debugPrint('⚠️ Not authenticated. Call initialize() first.');
       return null;
     }
     return _authClient;
@@ -149,7 +131,6 @@ class GoogleDriveAuth {
   drive.DriveApi? getDriveApi() {
     final client = getAuthClient();
     if (client == null) {
-      debugPrint('⚠️ Cannot create DriveApi: not authenticated');
       return null;
     }
     return drive.DriveApi(client);
@@ -160,6 +141,5 @@ class GoogleDriveAuth {
     _authClient?.close();
     _authClient = null;
     _isInitialized = false;
-    debugPrint('🔒 Google Drive Auth disposed');
   }
 }

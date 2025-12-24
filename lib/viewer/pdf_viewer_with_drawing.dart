@@ -314,7 +314,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     if (details.pointerCount == 2) {
       _scaleStartTransform = Matrix4.copy(transformationController.value);
       _scaleStartFocalPoint = details.localFocalPoint;
-      print("✌️ 2 pointers: zoom mode at ${details.localFocalPoint}");
+
       return;
     }
 
@@ -323,18 +323,14 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       if (tool.grab || tool.mouse) {
         _isPanning = true;
         _panStartPosition = details.localFocalPoint;
-        print("👆 1 pointer: panning mode");
       } else if (tool.shape || tool.pencil || tool.eraser || tool.highlighter) {
         if (_rotationAngle != 0.0) {
-          print("⚠️ Rotation is not zero, skipping draw");
           return;
         }
         if (tool.shape) {
           _startShape(details.localFocalPoint);
-          print("📐 1 pointer: shape mode");
         } else {
           _startStroke(details.localFocalPoint);
-          print("✏️ 1 pointer: drawing mode");
         }
       }
     }
@@ -458,29 +454,24 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     if (isStylus) {
       _isStylusActive = true;
       _lastStylusTime = DateTime.now();
-      print("✅ Stylus detected - palm rejection active");
     }
 
     // Reject touch input if stylus was recently active (palm rejection)
     if (isTouch && _isStylusActive && _lastStylusTime != null) {
       final timeSinceStylus = DateTime.now().difference(_lastStylusTime!);
       if (timeSinceStylus < _palmRejectionWindow) {
-        print("🚫 Palm rejection: Ignoring touch input (stylus active)");
         return;
       }
     }
 
     if (_rotationAngle != 0.0) {
-      print("⚠️ Rotation is not zero, skipping draw");
       return;
     }
 
     if (tool.shape) {
       _startShape(event.localPosition);
-      print("📐 Shape started with ${event.kind}");
     } else if (tool.pencil || tool.eraser || tool.highlighter) {
       _startStroke(event.localPosition);
-      print("✏️ Stroke started with ${event.kind}");
     }
   }
 
@@ -508,13 +499,10 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   void _handleDrawingPointerUp(PointerUpEvent event) {
     final tool = toolNotifier.value;
 
-    print("🖊️ Drawing PointerUp: kind=${event.kind}");
-
     // Reset stylus active state when stylus is lifted
     if (event.kind == PointerDeviceKind.stylus) {
       // Keep stylus active for a short window after lifting
       // This helps reject palm touches that happen right after drawing
-      print("📝 Stylus lifted - palm rejection window active");
     }
 
     // Palm rejection: Ignore touch events when stylus is active
@@ -522,7 +510,6 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     if (isTouch && _isStylusActive && _lastStylusTime != null) {
       final timeSinceStylus = DateTime.now().difference(_lastStylusTime!);
       if (timeSinceStylus < _palmRejectionWindow) {
-        print("🚫 Palm rejection: Ignoring touch up event");
         return;
       }
     }
@@ -535,8 +522,6 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   }
 
   void _handleDrawingPointerCancel(PointerCancelEvent event) {
-    print("❌ Drawing PointerCancel: kind=${event.kind}");
-
     // Clean up if drawing was cancelled
     if (_isDrawing || _activeStroke != null) {
       setState(() {
@@ -555,7 +540,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       _shapeStartPoint = transformedPosition;
 
       final tool = toolNotifier.value;
-      print('🔶 Şekil çiziliyor - seçili şekil: ${tool.selectedShape}');
+
       StrokeType strokeType;
 
       switch (tool.selectedShape) {
@@ -623,19 +608,15 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   }
 
   void _startStroke(Offset position) {
-    print("🖊️ _startStroke called at screen position: $position");
     final transformedPosition = _transformPoint(position);
-    print("🔄 Transformed to content position: $transformedPosition");
-    print("📊 Current transform matrix: ${transformationController.value}");
+
     print(
       "🔍 Current scale: ${transformationController.value.getMaxScaleOnAxis()}",
     );
 
     // İlk çizimse boş durumu kaydet
     if (!_history.canUndo(_currentPage) && !_history.canRedo(_currentPage)) {
-      print('🔵 İlk çizim - boş durum kaydediliyor (Sayfa: $_currentPage)');
       _saveToHistory();
-      print('🔵 Boş durum kaydedildi - canUndo: ${_canUndoNotifier.value}');
     }
 
     setState(() {
@@ -655,7 +636,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
           transformedPosition,
           tool.width * 15,
         ); // Daha büyük silgi alanı
-        print("🧹 Eraser stroke started");
+
         return;
       }
 
@@ -1381,7 +1362,6 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
   Future<void> _showCropImage(String imageFileName) async {
     // Web'de zipBytes, mobil/desktop'ta zipFilePath kullan
     if (widget.zipFilePath == null && widget.zipBytes == null) {
-      print('⚠️ Book file path and bytes are null!');
       return;
     }
 
@@ -1429,7 +1409,6 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
       }
 
       if (imageList.isEmpty) {
-        print('⚠️ No images found on this page');
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -1455,10 +1434,7 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
           zipBytes: widget.zipBytes,
         ),
       );
-
-      print('✅ Image gallery displayed with ${imageList.length} images');
     } catch (e) {
-      print('❌ Error loading images: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1471,7 +1447,6 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
 
   Widget _buildCropButtons() {
     if (widget.cropData == null) {
-      print('⚠️ No crop data available');
       return const SizedBox.shrink();
     }
 
@@ -1482,7 +1457,6 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
     );
 
     if (cropsForPage.isEmpty) {
-      print('⚠️ No objects on page $_currentPage');
       return const SizedBox.shrink();
     }
 
@@ -1595,7 +1569,6 @@ class PdfViewerWithDrawingState extends State<PdfViewerWithDrawing> {
                         top: buttonTop,
                         child: GestureDetector(
                           onTap: () {
-                            print('Question ${crop.questionNumber} clicked!');
                             _showCropImage(crop.imageFile);
                           },
                           child: Container(

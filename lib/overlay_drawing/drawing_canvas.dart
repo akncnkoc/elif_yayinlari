@@ -109,7 +109,6 @@ class DrawingCanvasState extends State<DrawingCanvas> {
           final shape = ShapeRecognizer.recognize(points);
           if (shape.type != RecognizedShapeType.none) {
             recognizedPath = shape.path;
-            debugPrint('✨ Shape Recognized: ${shape.type}');
           }
         }
 

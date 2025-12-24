@@ -41,18 +41,13 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
 
       // Web'de zipBytes, mobil/desktop'ta zipFilePath kullan
       if (widget.zipBytes != null || widget.zipFilePath != null) {
-        print('🎬 Loading animation from ZIP');
-        print('📄 Animation path in ZIP: ${widget.animationDataPath}');
-
         // Zip bytes'ı al
         final Uint8List zipBytesData;
         if (widget.zipBytes != null) {
           // Web platformu - bytes kullan
-          print('   Using zipBytes (Web platform)');
           zipBytesData = widget.zipBytes!;
         } else {
           // Mobil/Desktop - dosyadan oku
-          print('   Using zipFilePath: ${widget.zipFilePath}');
           final zipFile = File(widget.zipFilePath!);
           if (!await zipFile.exists()) {
             if (!mounted) return;
@@ -76,13 +71,6 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
         }
 
         if (animationFile == null) {
-          print('❌ Animation file not found in ZIP');
-          print('📦 Files in ZIP:');
-          for (final file in archive) {
-            if (file.isFile) {
-              print('   - ${file.name}');
-            }
-          }
           if (!mounted) return;
           setState(() {
             _error =
@@ -92,13 +80,11 @@ class AnimationPlayerWidgetState extends State<AnimationPlayerWidget> {
           return;
         }
 
-        print('✅ Animation file found in ZIP, loading...');
         final content = animationFile.content as Uint8List;
         jsonString = utf8.decode(content);
       } else {
         // Fallback to file system
         final filePath = '${widget.baseDirectory}/${widget.animationDataPath}';
-        print('🎬 Loading animation from file system: $filePath');
 
         final file = File(filePath);
         if (!await file.exists()) {

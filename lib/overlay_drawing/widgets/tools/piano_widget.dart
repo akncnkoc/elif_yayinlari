@@ -25,21 +25,38 @@ class _PianoWidgetState extends State<PianoWidget> {
     'C5',
   ];
 
+  final List<AudioPlayer> _pool = [];
+  int _poolIndex = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize a pool of players for polyphony
+    for (int i = 0; i < 5; i++) {
+      final p = AudioPlayer();
+      // Low latency mode is better for short sounds
+      p.setPlayerMode(PlayerMode.lowLatency);
+      _pool.add(p);
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final p in _pool) {
+      p.dispose();
+    }
+    super.dispose();
+  }
+
   Future<void> _playNote(String note) async {
     try {
-      // Create a specific player for polyphony?
-      // AudioPlayer simple usage stops previous.
-      // To play multiple keys quickly, we might need multiple players or 'mode: PlayerMode.lowLatency'
-      // But for this widget, a single player re-triggering is acceptable for "toy" piano.
-      // Better: Use a pool if possible, but package simple usage is single track.
-      // Let's create a temporary player for each note for polyphony.
-      final player = AudioPlayer();
+      // Round-robin selection of players
+      final player = _pool[_poolIndex];
+      _poolIndex = (_poolIndex + 1) % _pool.length;
+
+      await player.stop(); // Stop potential previous sound on this track
       await player.play(UrlSource('$_baseUrl$note.mp3'));
-      // Auto dispose is tricky. AudioPlayer mostly handles it if we don't hold ref.
-      player.onPlayerComplete.listen((_) => player.dispose());
-    } catch (e) {
-      debugPrint('Error playing note: $e');
-    }
+    } catch (e) {}
   }
 
   @override
@@ -147,8 +164,8 @@ class _PianoWidgetState extends State<PianoWidget> {
     return Positioned(
       left: left,
       top: 0,
-      bottom: parentHeight * 0.4,
       width: blackKeyWidth,
+      bottom: parentHeight * 0.4, // Leave 40% space at bottom (60% height)
       child: _PianoKey(
         isBlack: true,
         label: note,

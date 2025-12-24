@@ -22,7 +22,6 @@ class BluetoothServerDart {
   /// Start the TCP server
   Future<bool> startServer({int port = defaultPort}) async {
     if (_isRunning) {
-      debugPrint('❌ Server already running');
       return false;
     }
 
@@ -43,8 +42,6 @@ class BluetoothServerDart {
         if (localIp != null) break;
       }
 
-      debugPrint('✅ Server started on ${localIp ?? 'unknown'}:$port');
-
       _eventController.add({
         'type': 'serverStarted',
         'ip': localIp ?? 'unknown',
@@ -55,25 +52,16 @@ class BluetoothServerDart {
       _serverSocket!.listen(
         _handleClient,
         onError: (error) {
-          debugPrint('❌ Server error: $error');
-          _eventController.add({
-            'type': 'error',
-            'error': error.toString(),
-          });
+          _eventController.add({'type': 'error', 'error': error.toString()});
         },
         onDone: () {
-          debugPrint('🛑 Server stopped');
           _isRunning = false;
         },
       );
 
       return true;
     } catch (e) {
-      debugPrint('❌ Failed to start server: $e');
-      _eventController.add({
-        'type': 'error',
-        'error': e.toString(),
-      });
+      _eventController.add({'type': 'error', 'error': e.toString()});
       return false;
     }
   }
@@ -82,8 +70,8 @@ class BluetoothServerDart {
   void _handleClient(Socket client) {
     _clients.add(client);
 
-    final clientAddress = '${client.remoteAddress.address}:${client.remotePort}';
-    debugPrint('📱 Client connected: $clientAddress');
+    final clientAddress =
+        '${client.remoteAddress.address}:${client.remotePort}';
 
     _eventController.add({
       'type': 'clientConnected',
@@ -96,23 +84,18 @@ class BluetoothServerDart {
       (data) {
         try {
           final message = utf8.decode(data).trim();
-          debugPrint('📨 Received: $message from $clientAddress');
 
           _eventController.add({
             'type': 'messageReceived',
             'clientAddress': clientAddress,
             'message': message,
           });
-        } catch (e) {
-          debugPrint('❌ Error decoding message: $e');
-        }
+        } catch (e) {}
       },
       onError: (error) {
-        debugPrint('❌ Client error: $error');
         _removeClient(client);
       },
       onDone: () {
-        debugPrint('👋 Client disconnected: $clientAddress');
         _removeClient(client);
 
         _eventController.add({
@@ -139,9 +122,7 @@ class BluetoothServerDart {
     for (final client in _clients) {
       try {
         client.add(data);
-        debugPrint('📤 Sent: $message');
       } catch (e) {
-        debugPrint('❌ Failed to send to client: $e');
         _removeClient(client);
       }
     }
@@ -153,7 +134,6 @@ class BluetoothServerDart {
       _removeClient(client);
     }
     _clients.clear();
-    debugPrint('👋 All clients disconnected');
   }
 
   /// Stop the server
@@ -165,8 +145,6 @@ class BluetoothServerDart {
     await _serverSocket?.close();
     _serverSocket = null;
     _isRunning = false;
-
-    debugPrint('🛑 Server stopped');
   }
 
   /// Check if Bluetooth is available (always true for TCP)

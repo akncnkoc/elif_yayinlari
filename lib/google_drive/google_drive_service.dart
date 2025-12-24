@@ -16,9 +16,7 @@ class GoogleDriveService {
     try {
       await _auth.initialize();
       _isInitialized = true;
-      debugPrint('✅ GoogleDriveService initialized');
     } catch (e) {
-      debugPrint('❌ Failed to initialize GoogleDriveService: $e');
       rethrow;
     }
   }
@@ -34,7 +32,6 @@ class GoogleDriveService {
         await initialize();
       }
 
-      debugPrint('========================================');
       debugPrint(
         '📂 Listing Google Drive files in folder: ${folderId ?? "root"}',
       );
@@ -123,11 +120,9 @@ class GoogleDriveService {
       debugPrint(
         '✅ Found ${result.length} items (folders + books with covers)',
       );
-      debugPrint('========================================');
+
       return result;
     } catch (e) {
-      debugPrint('❌ Error listing files: $e');
-      debugPrint('========================================');
       rethrow;
     }
   }
@@ -139,8 +134,6 @@ class GoogleDriveService {
       if (!_isInitialized) {
         await initialize();
       }
-
-      debugPrint('🔍 Searching for .book files in Google Drive');
 
       final driveApi = _auth.getDriveApi();
       if (driveApi == null) {
@@ -210,10 +203,8 @@ class GoogleDriveService {
         }
       }
 
-      debugPrint('✅ Found ${result.length} .book files (with covers)');
       return result;
     } catch (e) {
-      debugPrint('❌ Error searching book files: $e');
       rethrow;
     }
   }
@@ -230,8 +221,6 @@ class GoogleDriveService {
       if (!_isInitialized) {
         await initialize();
       }
-
-      debugPrint('⬇️ Downloading file: $fileName (ID: $fileId)');
 
       final driveApi = _auth.getDriveApi();
       if (driveApi == null) {
@@ -263,10 +252,8 @@ class GoogleDriveService {
       }
       await file.writeAsBytes(bytes);
 
-      debugPrint('✅ File downloaded successfully: $filePath');
       return file;
     } catch (e) {
-      debugPrint('❌ Download error: $e');
       rethrow;
     }
   }
@@ -278,8 +265,6 @@ class GoogleDriveService {
       if (!_isInitialized) {
         await initialize();
       }
-
-      debugPrint('⬇️ Downloading file bytes (ID: $fileId)');
 
       final driveApi = _auth.getDriveApi();
       if (driveApi == null) {
@@ -302,10 +287,8 @@ class GoogleDriveService {
         bytes.addAll(chunk);
       }
 
-      debugPrint('✅ Downloaded ${bytes.length} bytes');
       return Uint8List.fromList(bytes);
     } catch (e) {
-      debugPrint('❌ Download error: $e');
       rethrow;
     }
   }

@@ -40,8 +40,6 @@ class AccessCodeService {
     final normalizedCode = code.trim().toUpperCase();
 
     try {
-      debugPrint('🔍 Verifying code with backend: $_baseUrl/api/verify-code');
-
       final response = await http
           .post(
             Uri.parse('$_baseUrl/api/verify-code'),
@@ -54,8 +52,6 @@ class AccessCodeService {
         final data = json.decode(response.body);
 
         if (data['success'] == true) {
-          debugPrint('✅ Backend verification successful');
-
           final Map<String, dynamic> responseData = data['data'];
 
           if (responseData.containsKey('resources')) {
@@ -68,20 +64,14 @@ class AccessCodeService {
             return [ResourceConfig.fromJson(responseData)];
           }
         } else {
-          debugPrint('❌ Backend returned failure: ${data['message']}');
           return [];
         }
       } else {
-        debugPrint('⚠️ Backend returned status ${response.statusCode}');
         // Status != 200, try fallback or throw
         throw HttpException('Status ${response.statusCode}');
       }
     } catch (e) {
-      debugPrint('⚠️ Backend connection failed: $e');
-      debugPrint('info: Trying local fallback codes...');
-
       if (_localFallbackCodes.containsKey(normalizedCode)) {
-        debugPrint('✅ Found in local fallback');
         return _localFallbackCodes[normalizedCode]!;
       }
 

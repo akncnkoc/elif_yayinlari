@@ -14,7 +14,10 @@ class DrawingPenLauncher {
     try {
       // Windows'ta tasklist ile kontrol et
       if (Platform.isWindows) {
-        final result = Process.runSync('tasklist', ['/FI', 'PID eq ${_process!.pid}']);
+        final result = Process.runSync('tasklist', [
+          '/FI',
+          'PID eq ${_process!.pid}',
+        ]);
         if (!result.stdout.toString().contains('${_process!.pid}')) {
           _process = null;
           return false;
@@ -34,12 +37,10 @@ class DrawingPenLauncher {
   /// Çizim kalemini başlat
   static Future<bool> launch() async {
     if (!isDesktop) {
-      debugPrint('⚠️ Çizim kalemi sadece desktop platformlarında çalışır');
       return false;
     }
 
     if (isRunning) {
-      debugPrint('⚠️ Çizim kalemi zaten çalışıyor');
       return false;
     }
 
@@ -53,37 +54,19 @@ class DrawingPenLauncher {
         final exeDir = Platform.resolvedExecutable;
         final exeDirPath = Directory(exeDir).parent.path;
         final mainExe = Platform.resolvedExecutable; // Şu anda çalışan exe
-        
+
         // Ana exe'yi --drawing-pen ile çalıştır
         executable = mainExe;
         arguments = ['--drawing-pen'];
-        
-        debugPrint('📍 Ana executable: $mainExe');
-        debugPrint('📍 Arguments: --drawing-pen');
       } else if (Platform.isLinux) {
         executable = 'flutter';
-        arguments = [
-          'run',
-          '-d',
-          'linux',
-          '-t',
-          'lib/drawing_pen_main.dart',
-        ];
+        arguments = ['run', '-d', 'linux', '-t', 'lib/drawing_pen_main.dart'];
       } else if (Platform.isMacOS) {
         executable = 'flutter';
-        arguments = [
-          'run',
-          '-d',
-          'macos',
-          '-t',
-          'lib/drawing_pen_main.dart',
-        ];
+        arguments = ['run', '-d', 'macos', '-t', 'lib/drawing_pen_main.dart'];
       } else {
         return false;
       }
-
-
-      debugPrint('🚀 Çizim kalemi başlatılıyor: $executable ${arguments.join(' ')}');
 
       _process = await Process.start(
         executable,
@@ -91,20 +74,16 @@ class DrawingPenLauncher {
         mode: ProcessStartMode.detached,
       );
 
-      debugPrint('✅ Çizim kalemi başlatıldı (PID: ${_process!.pid})');
-
       // Ana uygulamayı minimize et
       if (!kIsWeb) {
         // Önce fullscreen'den çık
         await windowManager.setFullScreen(false);
         // Sonra minimize et
         await windowManager.minimize();
-        debugPrint('📦 Ana uygulama minimize edildi');
       }
 
       return true;
     } catch (e) {
-      debugPrint('❌ Çizim kalemi başlatılamadı: $e');
       return false;
     }
   }
@@ -114,12 +93,10 @@ class DrawingPenLauncher {
     if (_process != null) {
       _process!.kill();
       _process = null;
-      debugPrint('✅ Çizim kalemi kapatıldı');
     }
   }
 
   static void debugPrint(String message) {
     if (kIsWeb) return;
-    print(message);
   }
 }

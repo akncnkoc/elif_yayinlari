@@ -31,9 +31,7 @@ class VersionChecker {
           );
         }
       }
-    } catch (e) {
-      debugPrint('Error checking for updates: $e');
-    }
+    } catch (e) {}
     return null;
   }
 
@@ -109,7 +107,6 @@ class VersionChecker {
 
       return true;
     } catch (e) {
-      debugPrint('Error downloading update: $e');
       return false;
     }
   }
@@ -160,7 +157,6 @@ class VersionChecker {
         exit(0);
       }
     } catch (e) {
-      debugPrint('Error applying update: $e');
       rethrow;
     }
   }

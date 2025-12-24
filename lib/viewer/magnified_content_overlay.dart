@@ -156,17 +156,15 @@ class _MagnifiedContentOverlayState extends State<MagnifiedContentOverlay> {
       // Get the RenderObject from the RepaintBoundary
       final renderObject = widget.contentKey.currentContext?.findRenderObject();
 
-      print('🔍 Capturing content...');
       print(
         '   Context: ${widget.contentKey.currentContext != null ? "✓" : "✗"}',
       );
-      print('   RenderObject: ${renderObject != null ? "✓" : "✗"}');
+
       print(
         '   Is RepaintBoundary: ${renderObject is RenderRepaintBoundary ? "✓" : "✗"}',
       );
 
       if (renderObject is! RenderRepaintBoundary) {
-        print('❌ RenderObject is not a RepaintBoundary!');
         if (!mounted) return;
         setState(() => _isCapturing = false);
         return;
@@ -178,7 +176,6 @@ class _MagnifiedContentOverlayState extends State<MagnifiedContentOverlay> {
       // ⚡ 1. AŞAMA: HIZLI DÜŞÜK KALİTE YÜKLEME
       // Önce düşük pixel ratio ile hızlıca yakala ve göster
       final quickPixelRatio = (devicePixelRatio * 1.5).clamp(2.0, 3.0);
-      print('⚡ Phase 1: Quick capture at ${quickPixelRatio}x...');
 
       final quickImage = await boundary.toImage(pixelRatio: quickPixelRatio);
 
@@ -190,13 +187,10 @@ class _MagnifiedContentOverlayState extends State<MagnifiedContentOverlay> {
         _isCapturing = false;
       });
 
-      print('✅ Quick preview loaded: ${quickImage.width}x${quickImage.height}');
-
       // 🎨 2. AŞAMA: YÜKSEK KALİTE YÜKLEME (ARKA PLANDA)
       // Kullanıcı zaten içeriği görüyor, şimdi yüksek kaliteyi yükle
       final highPixelRatio = (devicePixelRatio * widget.magnification * 1.5)
           .clamp(3.0, 6.0);
-      print('🎨 Phase 2: High quality capture at ${highPixelRatio}x...');
 
       final highImage = await boundary.toImage(pixelRatio: highPixelRatio);
 
@@ -212,13 +206,7 @@ class _MagnifiedContentOverlayState extends State<MagnifiedContentOverlay> {
         _capturedImage = highImage;
         _capturePixelRatio = highPixelRatio;
       });
-
-      print('✅ High quality loaded: ${highImage.width}x${highImage.height}');
-      print('   Selected area: ${widget.selectedArea}');
     } catch (e, stackTrace) {
-      print('❌ Error capturing content: $e');
-      print('   Stack trace: $stackTrace');
-
       if (!mounted) return;
       setState(() => _isCapturing = false);
     }
@@ -574,7 +562,6 @@ class _MagnifiedContentOverlayState extends State<MagnifiedContentOverlay> {
         _height = _savedHeight;
         _position = _savedPosition;
         _isFullscreen = false;
-        print('📉 Normal moda dönüldü');
       } else {
         // Tam ekrana geç - mevcut boyut ve pozisyonu kaydet
         _savedWidth = _width;
@@ -587,7 +574,6 @@ class _MagnifiedContentOverlayState extends State<MagnifiedContentOverlay> {
         _height = screenSize.height;
         _position = Offset.zero;
         _isFullscreen = true;
-        print('📈 Tam ekran moduna geçildi');
       }
     });
   }
@@ -677,7 +663,6 @@ class _MagnifiedContentOverlayState extends State<MagnifiedContentOverlay> {
                             onDrawingChanged: () {
                               // Force repaint when drawing changes
                               setState(() {});
-                              print('🎨 Drawing changed - repainted');
                             },
                             child: CustomPaint(
                               painter: _MagnifiedImagePainter(
@@ -1182,14 +1167,6 @@ class _MagnifiedImagePainter extends CustomPainter {
       scaledSourceRect.right.clamp(0.0, image.width.toDouble()),
       scaledSourceRect.bottom.clamp(0.0, image.height.toDouble()),
     );
-
-    print('🎨 Painting magnified image:');
-    print('   Image size: ${image.width}x${image.height}');
-    print('   Source rect (screen): $sourceRect');
-    print('   Capture pixel ratio: ${capturePixelRatio}x');
-    print('   Scaled source rect: $scaledSourceRect');
-    print('   Clamped source rect: $clampedSourceRect');
-    print('   Canvas size: $size');
 
     // Destination rectangle fills the entire canvas
     final destRect = Rect.fromLTWH(0, 0, size.width, size.height);

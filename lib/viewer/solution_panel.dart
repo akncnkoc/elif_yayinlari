@@ -65,9 +65,7 @@ class _SolutionPanelState extends State<SolutionPanel> {
 
       // Encode back to PNG
       return Uint8List.fromList(img.encodePng(croppedImage));
-    } catch (e) {
-      print('Error loading/cropping drawing: $e');
-    }
+    } catch (e) {}
     return null;
   }
 

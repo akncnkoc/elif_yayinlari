@@ -25,7 +25,6 @@ class UpdateService {
       );
 
       if (response.statusCode != 200) {
-        print('❌ Failed to fetch updates: ${response.statusCode}');
         return null;
       }
 
@@ -37,8 +36,6 @@ class UpdateService {
       // Assumes tag format "v1.0.0" or "1.0.0"
       final cleanRemote = tagName.replaceAll('v', '').split('+')[0];
       final cleanLocal = currentVersion.replaceAll('v', '').split('+')[0];
-
-      print('🔎 Comparing Local: $cleanLocal vs Remote: $cleanRemote');
 
       if (!_isRemoteNewer(cleanLocal, cleanRemote)) {
         return null; // Local is same or newer
@@ -65,7 +62,6 @@ class UpdateService {
         isInstaller: downloadUrl.endsWith('.exe'),
       );
     } catch (e) {
-      print('❌ Update check error: $e');
       return null;
     }
   }
@@ -96,7 +92,6 @@ class UpdateService {
       // Exit app
       exit(0);
     } catch (e) {
-      print('❌ Update execution error: $e');
       rethrow;
     }
   }
@@ -120,7 +115,6 @@ class UpdateService {
       }
       return false; // Equal or local is newer
     } catch (e) {
-      print('⚠️ Version parsing failed: $e');
       // Fallback to string comparison if not numeric
       return remote != local;
     }

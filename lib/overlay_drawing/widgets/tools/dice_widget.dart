@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../../../widgets/keyboard_text_field.dart';
 
 class DiceWidget extends StatefulWidget {
   const DiceWidget({super.key});
@@ -228,16 +229,23 @@ class _DiceWidgetState extends State<DiceWidget>
                       child: Row(
                         children: [
                           Expanded(
-                            child: TextField(
+                            child: KeyboardTextField(
                               controller: _kuraController,
                               decoration: const InputDecoration(
-                                hintText: 'İsim ekle...',
+                                hintText: 'İsim girin...',
                                 border: OutlineInputBorder(),
                                 contentPadding: EdgeInsets.symmetric(
                                   horizontal: 12,
                                 ),
                               ),
-                              onSubmitted: (_) => _addParticipant(),
+                              onSubmitted: (_) {
+                                if (_kuraController.text.isNotEmpty) {
+                                  setState(() {
+                                    _participants.add(_kuraController.text);
+                                    _kuraController.clear();
+                                  });
+                                }
+                              },
                             ),
                           ),
                           const SizedBox(width: 8),

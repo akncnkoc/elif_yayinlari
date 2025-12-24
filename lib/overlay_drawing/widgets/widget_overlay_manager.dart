@@ -6,6 +6,10 @@ import 'tools/periodic_table_widget.dart';
 import 'tools/map_widget.dart';
 import 'tools/dictionary_widget.dart';
 import 'tools/piano_widget.dart';
+import 'tools/unit_converter_widget.dart';
+import 'tools/solar_system_widget.dart';
+import 'tools/anatomy_widget.dart';
+import 'tools/coding_blocks_widget.dart';
 
 class ActiveWidgetModel {
   final String id;
@@ -74,6 +78,22 @@ class WidgetOverlayManagerState extends State<WidgetOverlayManager> {
         title = 'Piyano';
         initialSize = const Size(500, 220);
       }
+      if (type == 'unit_converter') {
+        title = 'Birim Çevirici';
+        initialSize = const Size(400, 350);
+      }
+      if (type == 'solar_system') {
+        title = 'Güneş Sistemi';
+        initialSize = const Size(800, 800);
+      }
+      if (type == 'anatomy') {
+        title = 'İnsan Vücudu Atlası';
+        initialSize = const Size(600, 500);
+      }
+      if (type == 'coding_blocks') {
+        title = 'Kodlama Atölyesi';
+        initialSize = const Size(400, 550);
+      }
 
       _activeWidgets.add(
         ActiveWidgetModel(
@@ -107,6 +127,14 @@ class WidgetOverlayManagerState extends State<WidgetOverlayManager> {
         return const DictionaryWidget();
       case 'piano':
         return const PianoWidget();
+      case 'unit_converter':
+        return const UnitConverterWidget();
+      case 'solar_system':
+        return const SolarSystemWidget();
+      case 'anatomy':
+        return const AnatomyWidget();
+      case 'coding_blocks':
+        return const CodingBlocksWidget();
       default:
         return const SizedBox(
           width: 100,
@@ -126,6 +154,18 @@ class WidgetOverlayManagerState extends State<WidgetOverlayManager> {
         return Colors.green;
       case 'map':
         return Colors.blue;
+      case 'dictionary':
+        return Colors.indigo;
+      case 'piano':
+        return Colors.pink;
+      case 'unit_converter':
+        return Colors.teal;
+      case 'solar_system':
+        return Colors.deepPurple;
+      case 'anatomy':
+        return Colors.blueGrey;
+      case 'coding_blocks':
+        return Colors.orangeAccent;
       default:
         return Colors.grey;
     }

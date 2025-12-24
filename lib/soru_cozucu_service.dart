@@ -13,7 +13,6 @@ class SoruCozucuService {
       final response = await http.get(Uri.parse('$baseUrl/health'));
       return response.statusCode == 200;
     } catch (e) {
-      print('❌ Sunucu bağlantı hatası: $e');
       return false;
     }
   }
@@ -41,12 +40,9 @@ class SoruCozucuService {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
         return AnalysisResult.fromJson(data);
       } else {
-        print('❌ Analiz hatası: ${response.statusCode}');
-        print('   Mesaj: ${response.body}');
         return null;
       }
     } catch (e) {
-      print('❌ Analiz exception: $e');
       return null;
     }
   }
@@ -67,11 +63,9 @@ class SoruCozucuService {
         final data = jsonDecode(utf8.decode(response.bodyBytes));
         return BatchAnalysisResult.fromJson(data);
       } else {
-        print('❌ Batch analiz hatası: ${response.statusCode}');
         return null;
       }
     } catch (e) {
-      print('❌ Batch analiz exception: $e');
       return null;
     }
   }

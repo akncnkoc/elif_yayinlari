@@ -12,23 +12,18 @@ import 'widgets/virtual_keyboard.dart';
 
 void main(List<String> args) async {
   try {
-    print('🚀 Application starting...');
-    print('📍 Args: $args');
-
     // Eğer --drawing-pen argümanı varsa çizim kalemi uygulamasını başlat
     if (args.contains('--drawing-pen')) {
-      print('🎨 Starting drawing pen mode');
       return drawing_pen.main();
     }
 
     // Normal ana uygulama
-    print('✅ Initializing Flutter binding...');
+
     WidgetsFlutterBinding.ensureInitialized();
     // FlutterNativeSplash.preserve is REMOVED to use custom splash
 
     // Mobile only: Immersive mode
     if (Platform.isAndroid || Platform.isIOS) {
-      print('✅ Setting system UI mode (Mobile only)...');
       SystemChrome.setEnabledSystemUIMode(
         SystemUiMode.immersiveSticky,
         overlays: [SystemUiOverlay.top, SystemUiOverlay.bottom],
@@ -47,7 +42,6 @@ void main(List<String> args) async {
     // Web'de window_manager kullanma
     if (!kIsWeb && Platform.isWindows) {
       try {
-        print('🪟 Initializing window manager...');
         await windowManager.ensureInitialized();
 
         // Splash screen için 500x500 küçük pencere
@@ -61,7 +55,6 @@ void main(List<String> args) async {
           fullScreen: false,
         );
 
-        print('✅ Window options configured, showing window...');
         windowManager.waitUntilReadyToShow(windowOptions, () async {
           await windowManager.setAsFrameless(); // Ensure strictly frameless
           await windowManager.setHasShadow(false);
@@ -70,21 +63,14 @@ void main(List<String> args) async {
           await windowManager.focus();
           await windowManager.focus();
           await windowManager.focus();
-          print('✅ Window shown and focused');
         });
       } catch (e, stackTrace) {
-        print('❌ Window manager error: $e');
-        print('Stack trace: $stackTrace');
         // Continue anyway - app might still work without window manager
       }
     }
 
-    print('🎯 Running app...');
     runApp(const TechAtlas());
-    print('✅ App launched successfully');
   } catch (e, stackTrace) {
-    print('❌ FATAL ERROR in main(): $e');
-    print('Stack trace: $stackTrace');
     rethrow;
   }
 }

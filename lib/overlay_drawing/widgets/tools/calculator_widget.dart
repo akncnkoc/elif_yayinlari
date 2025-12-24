@@ -67,7 +67,7 @@ class _CalculatorWidgetState extends State<CalculatorWidget> {
           }
         } catch (e) {
           _result = 'Hata';
-          // debugPrint(e.toString());
+          //
         }
       } else {
         // Functions

@@ -613,14 +613,12 @@ class _ToolPanelState extends State<ToolPanel> {
           ShapeSelector(
             selectedShape: tool.selectedShape,
             onShapeSelected: (shape) {
-              print('🔷 Şekil seçildi: $shape');
               // Update DrawingProvider
               provider.setTool(
                 (t) => t.copyWith(selectedShape: shape, shape: true),
               );
               // Also update toolNotifier if provided
               if (widget.toolNotifier != null) {
-                print('🔷 toolNotifier güncelleniyor: $shape');
                 widget.toolNotifier!.value = widget.toolNotifier!.value
                     .copyWith(selectedShape: shape, shape: true);
               }
@@ -664,12 +662,10 @@ class _ToolPanelState extends State<ToolPanel> {
           child: ColorPickerButton(
             currentColor: tool.color,
             onColorChanged: (color) {
-              print('🎨 Renk seçildi: $color');
               // Update DrawingProvider
               provider.setColor(color);
               // Also update toolNotifier if provided
               if (widget.toolNotifier != null) {
-                print('🎨 toolNotifier güncelleniyor: $color');
                 widget.toolNotifier!.value = widget.toolNotifier!.value
                     .copyWith(color: color);
               }
@@ -717,12 +713,10 @@ class _ToolPanelState extends State<ToolPanel> {
           min: 2.0,
           max: 10.0,
           onChanged: (value) {
-            print('📏 Kalınlık seçildi: $value');
             // Update DrawingProvider
             provider.setWidth(value);
             // Also update toolNotifier if provided
             if (widget.toolNotifier != null) {
-              print('📏 toolNotifier güncelleniyor: $value');
               widget.toolNotifier!.value = widget.toolNotifier!.value.copyWith(
                 width: value,
               );

@@ -277,7 +277,6 @@ class _PdfThumbnailState extends State<PdfThumbnail> {
         }
       }
     } catch (e) {
-      print('Error loading thumbnail for page ${widget.pageNumber}: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }

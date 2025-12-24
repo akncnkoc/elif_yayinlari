@@ -49,9 +49,7 @@ class TOCDetectorService {
           maxLinks = internalLinkCount;
           bestPageNumber = i;
         }
-      } catch (e) {
-        print('Error loading links for page $i: $e');
-      }
+      } catch (e) {}
     }
 
     if (bestPageNumber != -1) {
@@ -109,8 +107,8 @@ class TOCDetectorService {
 
         // Debug
         // if (rowFragments.isEmpty) {
-        //   print('⚠️ No text found for link at Y=$linkRect (Center: ${linkRect.center.y})');
-        //   print('Sample text Y: ${text.fragments.take(3).map((f) => f.bounds.center.y).join(', ')}');
+        //
+        //
         // }
 
         // Sort fragments horizontally
@@ -152,9 +150,7 @@ class TOCDetectorService {
           );
         }
       }
-    } catch (e) {
-      print('Error extracting chapters: $e');
-    }
+    } catch (e) {}
 
     return chapters;
   }

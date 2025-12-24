@@ -32,11 +32,13 @@ class BluetoothConnectionPage extends StatefulWidget {
   const BluetoothConnectionPage({super.key});
 
   @override
-  State<BluetoothConnectionPage> createState() => _BluetoothConnectionPageState();
+  State<BluetoothConnectionPage> createState() =>
+      _BluetoothConnectionPageState();
 }
 
 class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
-  final FlutterBlueClassic _bluetooth = FlutterBlueClassic(usesFineLocation: true);
+  final FlutterBlueClassic _bluetooth =
+      FlutterBlueClassic(usesFineLocation: true);
   BluetoothConnection? _connection;
   bool _isScanning = false;
   List<BluetoothDevice> _devices = [];
@@ -231,7 +233,8 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
                       : const Icon(Icons.search),
                   label: Text(_isScanning ? 'Aranıyor...' : 'Cihaz Ara'),
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 32, vertical: 16),
                   ),
                 ),
               ],
@@ -241,7 +244,8 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
           Expanded(
             child: _devices.isEmpty
                 ? const Center(
-                    child: Text('Cihaz bulunamadı.\n"Cihaz Ara" butonuna basın.'),
+                    child:
+                        Text('Cihaz bulunamadı.\n"Cihaz Ara" butonuna basın.'),
                   )
                 : ListView.builder(
                     itemCount: _devices.length,
@@ -253,7 +257,8 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
                         subtitle: Text(device.address),
                         trailing: device.bondState == BluetoothBondState.bonded
                             ? const Chip(
-                                label: Text('Eşlenmiş', style: TextStyle(fontSize: 10)),
+                                label: Text('Eşlenmiş',
+                                    style: TextStyle(fontSize: 10)),
                                 backgroundColor: Colors.green,
                               )
                             : null,
@@ -325,7 +330,6 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
       final message = '$json\n';
       widget.connection.writeString(message);
     } catch (e) {
-      debugPrint('Send error: $e');
       _showError('Gönderme hatası: $e');
     }
   }
@@ -340,14 +344,13 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
         'type': 'mousedown',
         'button': 0, // Left button
       });
-      debugPrint('Çizim başladı');
     }
   }
 
   void _handlePanUpdate(DragUpdateDetails details) {
     // Her iki modda da mouse'u hareket ettir
     const double sensitivity = 2.0; // Increase for faster movement
-    debugPrint('Pan update: dx=${details.delta.dx}, dy=${details.delta.dy}, çizim modu=$_isDrawingMode');
+
     _sendEvent({
       'type': 'mousedelta',
       'deltaX': details.delta.dx * sensitivity,
@@ -365,7 +368,6 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
         'type': 'mouseup',
         'button': 0,
       });
-      debugPrint('Çizim bitti');
     }
   }
 
@@ -433,7 +435,8 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
               children: [
                 // Mod göstergesi ve toggle butonu
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -450,21 +453,25 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
-                              color: _isDrawingMode ? Colors.green : Colors.blue,
+                              color:
+                                  _isDrawingMode ? Colors.green : Colors.blue,
                             ),
                           ),
                         ],
                       ),
                       ElevatedButton.icon(
-                        onPressed: _isConnected ? () {
-                          setState(() {
-                            _isDrawingMode = !_isDrawingMode;
-                          });
-                        } : null,
+                        onPressed: _isConnected
+                            ? () {
+                                setState(() {
+                                  _isDrawingMode = !_isDrawingMode;
+                                });
+                              }
+                            : null,
                         icon: Icon(_isDrawingMode ? Icons.mouse : Icons.edit),
                         label: Text(_isDrawingMode ? 'Hareket' : 'Çizim'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _isDrawingMode ? Colors.blue : Colors.green,
+                          backgroundColor:
+                              _isDrawingMode ? Colors.blue : Colors.green,
                         ),
                       ),
                     ],
@@ -500,14 +507,16 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
                             const SizedBox(height: 8),
                             Text(
                               _isDrawingMode ? 'Çizim Modu' : 'Hareket Modu',
-                              style: const TextStyle(color: Colors.white54, fontSize: 18),
+                              style: const TextStyle(
+                                  color: Colors.white54, fontSize: 18),
                             ),
                             const SizedBox(height: 4),
                             Text(
                               _isDrawingMode
-                                ? 'Basılı tutarak çizin'
-                                : 'Parmağınızı sürükleyin',
-                              style: const TextStyle(color: Colors.white38, fontSize: 12),
+                                  ? 'Basılı tutarak çizin'
+                                  : 'Parmağınızı sürükleyin',
+                              style: const TextStyle(
+                                  color: Colors.white38, fontSize: 12),
                             ),
                           ],
                         ),
@@ -537,10 +546,14 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
                       mainAxisSpacing: 12,
                       crossAxisSpacing: 12,
                       children: [
-                        _buildButton('Temizle', 'C', Icons.delete_outline, () => _sendKeyPress('c')),
-                        _buildButton('Geri Al', 'Z', Icons.undo, () => _sendKeyPress('z')),
-                        _buildButton('Silgi', 'E', Icons.edit_off, () => _sendKeyPress('e')),
-                        _buildButton('Kapat', 'Q', Icons.close, () => _sendKeyPress('q')),
+                        _buildButton('Temizle', 'C', Icons.delete_outline,
+                            () => _sendKeyPress('c')),
+                        _buildButton('Geri Al', 'Z', Icons.undo,
+                            () => _sendKeyPress('z')),
+                        _buildButton('Silgi', 'E', Icons.edit_off,
+                            () => _sendKeyPress('e')),
+                        _buildButton('Kapat', 'Q', Icons.close,
+                            () => _sendKeyPress('q')),
                       ],
                     ),
                   ),
@@ -553,7 +566,8 @@ class _RemoteControlPageState extends State<RemoteControlPage> {
     );
   }
 
-  Widget _buildButton(String label, String key, IconData icon, VoidCallback onPressed) {
+  Widget _buildButton(
+      String label, String key, IconData icon, VoidCallback onPressed) {
     return ElevatedButton(
       onPressed: _isConnected ? onPressed : null,
       style: ElevatedButton.styleFrom(

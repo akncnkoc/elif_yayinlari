@@ -184,8 +184,6 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
     _stopMousePolling();
     if (kIsWeb || !Platform.isWindows) return;
 
-    debugPrint('🖱️ Mouse polling started');
-
     // Z-Order koruması için ekstra sayaç
     int checkCount = 0;
 
@@ -259,21 +257,17 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
           _wasMouseOverToolbar = isOverUI;
 
           if (isOverUI) {
-            debugPrint('🖱️ Mouse over UI - Enabling interaction & Focus');
             // UI üzerine gelince TIKLANABİLİR yap ve ÖNE GETİR
             await windowManager.setIgnoreMouseEvents(false);
             await windowManager.setAlwaysOnTop(true);
             await windowManager.focus(); // Bu çok önemli, pencereyi öne çeker
           } else {
-            debugPrint('🖱️ Mouse outside UI - Disabling interaction');
             // UI dışına çıkınca TIKLAMAYI YOK SAY ama En Üstte tutmaya çalış
             await windowManager.setIgnoreMouseEvents(true, forward: true);
             // Focus'u bırakabiliriz ama alwaysOnTop kalmalı
           }
         }
-      } catch (e) {
-        debugPrint('Error polling mouse: $e');
-      }
+      } catch (e) {}
     });
   }
 
@@ -321,7 +315,6 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
         }
       } catch (e) {
         // Hata oluşursa sessizce devam et
-        debugPrint('Ekran klavyesi kontrolü hatası: $e');
       }
     }
   }
@@ -341,27 +334,23 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
         // Mouse/keyboard event handler'ları ayarla
         _bluetoothHandler.onMouseMove = (position) {
           // TODO: Absolute mouse pozisyonu
-          debugPrint('Mouse move: $position');
         };
 
         _bluetoothHandler.onMouseDelta = (delta) {
           // TODO: Relative mouse hareketi (daha kullanışlı)
-          debugPrint('Mouse delta: $delta');
         };
 
         _bluetoothHandler.onMouseDown = (button) {
           // TODO: Mouse button basıldı
-          debugPrint('Mouse down: $button');
         };
 
         _bluetoothHandler.onMouseUp = (button) {
           // TODO: Mouse button bırakıldı
-          debugPrint('Mouse up: $button');
         };
 
         _bluetoothHandler.onKeyDown = (key) {
           // TODO: Klavye tuşu basıldı
-          debugPrint('Key down: $key');
+
           _handleRemoteKeyPress(key);
         };
       }
@@ -399,17 +388,14 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
   }
 
   Future<void> _toggleMouseMode() async {
-    debugPrint('🔄 Toggling mouse mode. Current: $_isMouseMode');
     setState(() {
       _isMouseMode = !_isMouseMode;
     });
-    debugPrint('✅ Mouse mode toggled to: $_isMouseMode');
 
     // Windows'ta window ayarları
     if (!kIsWeb && Platform.isWindows) {
       if (_isMouseMode) {
         // MOUSE MODE: Click-through aktif ama toolbar için polling başlat
-        debugPrint('🖱️ Activating MOUSE mode with smart interaction');
 
         // Polling başlamadan önce garanti olsun diye OnTop yap
         await windowManager.setAlwaysOnTop(true);
@@ -417,10 +403,9 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
         // Başlangıçta click-through yap, polling düzeltecek
         await windowManager.setIgnoreMouseEvents(true, forward: true);
         _startMousePolling();
-        debugPrint('✅ Mouse mode activated - polling started');
       } else {
         // PEN MODE: Çizim aktif
-        debugPrint('✏️ Activating PEN mode (drawing enabled)');
+
         _stopMousePolling();
         await windowManager.setIgnoreMouseEvents(false);
         // Sadece ekran klavyesi açık değilse always on top'u aç
@@ -428,7 +413,6 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
           await windowManager.setAlwaysOnTop(true);
         }
         await windowManager.focus(); // Pen moda geçince focus al
-        debugPrint('✅ Pen mode activated');
       }
     }
   }
@@ -541,7 +525,6 @@ class _TransparentDrawingOverlayState extends State<TransparentDrawingOverlay> {
         // M tuşu ile mouse/pen mode toggle (özellikle mouse modunda önemli)
         if (event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.keyM) {
-          debugPrint('⌨️ M key pressed - toggling mouse mode');
           _toggleMouseMode();
           return KeyEventResult.handled;
         }

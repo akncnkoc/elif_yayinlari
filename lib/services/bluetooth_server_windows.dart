@@ -26,7 +26,6 @@ class BluetoothServerWindows {
   /// Start the Bluetooth RFCOMM server
   Future<bool> startServer() async {
     if (_isRunning) {
-      debugPrint('❌ Bluetooth server already running');
       return false;
     }
 
@@ -38,7 +37,6 @@ class BluetoothServerWindows {
         if (message is SendPort) {
           _sendPort = message;
           _isRunning = true;
-          debugPrint('✅ Bluetooth server started successfully');
         } else if (message is Map<String, dynamic>) {
           _eventController.add(message);
         }
@@ -52,7 +50,6 @@ class BluetoothServerWindows {
 
       return true;
     } catch (e) {
-      debugPrint('❌ Failed to start Bluetooth server: $e');
       return false;
     }
   }
@@ -68,8 +65,6 @@ class BluetoothServerWindows {
     _receivePort = null;
     _sendPort = null;
     _isRunning = false;
-
-    debugPrint('🛑 Bluetooth server stopped');
   }
 
   /// Send message to connected clients
@@ -107,7 +102,7 @@ class BluetoothServerWindows {
       if (result != 0) {
         mainSendPort.send({
           'type': 'error',
-          'error': 'Failed to initialize Winsock: $result'
+          'error': 'Failed to initialize Winsock: $result',
         });
         return;
       }
@@ -117,7 +112,7 @@ class BluetoothServerWindows {
       if (serverSocket == INVALID_SOCKET) {
         mainSendPort.send({
           'type': 'error',
-          'error': 'Failed to create socket: ${WSAGetLastError()}'
+          'error': 'Failed to create socket: ${WSAGetLastError()}',
         });
         WSACleanup();
         return;
@@ -129,11 +124,12 @@ class BluetoothServerWindows {
       bindAddr.ref.btAddr = 0; // BDADDR_ANY
       bindAddr.ref.port = BT_PORT_ANY;
 
-      if (bind(serverSocket, bindAddr.cast(), sizeOf<SOCKADDR_BTH>()) == SOCKET_ERROR) {
+      if (bind(serverSocket, bindAddr.cast(), sizeOf<SOCKADDR_BTH>()) ==
+          SOCKET_ERROR) {
         final error = WSAGetLastError();
         mainSendPort.send({
           'type': 'error',
-          'error': 'Failed to bind socket: $error'
+          'error': 'Failed to bind socket: $error',
         });
         calloc.free(bindAddr);
         closesocket(serverSocket);
@@ -148,7 +144,7 @@ class BluetoothServerWindows {
       if (getsockname(serverSocket, bindAddr.cast(), addrLen) == SOCKET_ERROR) {
         mainSendPort.send({
           'type': 'error',
-          'error': 'Failed to get socket name: ${WSAGetLastError()}'
+          'error': 'Failed to get socket name: ${WSAGetLastError()}',
         });
         calloc.free(addrLen);
         calloc.free(bindAddr);
@@ -163,7 +159,7 @@ class BluetoothServerWindows {
       if (listen(serverSocket, SOMAXCONN) == SOCKET_ERROR) {
         mainSendPort.send({
           'type': 'error',
-          'error': 'Failed to listen: ${WSAGetLastError()}'
+          'error': 'Failed to listen: ${WSAGetLastError()}',
         });
         calloc.free(bindAddr);
         closesocket(serverSocket);
@@ -171,7 +167,6 @@ class BluetoothServerWindows {
         return;
       }
 
-      debugPrint('🎧 Bluetooth server listening...');
       calloc.free(bindAddr);
 
       // Main server loop
@@ -230,12 +225,8 @@ class BluetoothServerWindows {
         // Break if should stop
         if (shouldStop) break;
       }
-
     } catch (e) {
-      mainSendPort.send({
-        'type': 'error',
-        'error': 'Server error: $e'
-      });
+      mainSendPort.send({'type': 'error', 'error': 'Server error: $e'});
     } finally {
       // Cleanup
       for (final clientSocket in clientSockets) {

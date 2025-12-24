@@ -69,16 +69,11 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
 
   Future<void> _loadCropImage() async {
     try {
-      print('📸 Crop resmi yükleniyor...');
-      print('   imageFile: ${widget.crop.imageFile}');
-      print('   cropImage (constructor): ${widget.cropImage != null}');
-
       // Önce constructor'dan gelen image'ı kullan
       if (widget.cropImage != null) {
         setState(() {
           _loadedCropImage = widget.cropImage;
         });
-        print('✅ Crop resmi constructor\'dan yüklendi');
         return;
       }
 
@@ -100,7 +95,6 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
           for (final file in archive) {
             if (file.name.endsWith(imageFileName) && file.isFile) {
               imageBytes = file.content as Uint8List;
-              print('✅ Resim ZIP\'ten bulundu: ${file.name}');
               break;
             }
           }
@@ -112,9 +106,6 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
 
         if (await imageFile.exists()) {
           imageBytes = await imageFile.readAsBytes();
-          print('✅ Resim dosyadan yüklendi: $imagePath');
-        } else {
-          print('❌ Resim dosyası bulunamadı: $imagePath');
         }
       }
 
@@ -122,39 +113,23 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
         setState(() {
           _loadedCropImage = imageBytes;
         });
-        print('✅ Crop resmi başarıyla yüklendi (${imageBytes.length} bytes)');
-      } else {
-        print('⚠️ Crop resmi yüklenemedi');
       }
     } catch (e) {
-      print('❌ Crop resmi yükleme hatası: $e');
+      // Ignore
     }
   }
 
   Future<void> _loadSolutionImages() async {
-    print('🔍 _loadSolutionImages çağrıldı');
-    print('   solutionMetadata: ${widget.crop.solutionMetadata}');
-
     final solutionImages = widget.crop.solutionMetadata?.solutionImages;
-    print('   solutionImages: $solutionImages');
 
     if (solutionImages == null || solutionImages.isEmpty) {
-      print('   ⚠️ solutionImages null veya boş');
       return;
     }
 
     try {
-      print(
-        '🖼️ Çözüm resimleri yükleniyor... (${solutionImages.length} adet)',
-      );
-      print('   baseDirectory: ${widget.baseDirectory}');
-      print('   zipFilePath: ${widget.zipFilePath}');
-      print('   zipBytes: ${widget.zipBytes != null ? "var" : "yok"}');
-
       final List<Uint8List> loadedImages = [];
 
       for (final imagePath in solutionImages) {
-        print('   📄 Aranan resim: $imagePath');
         Uint8List? imageBytes;
 
         if (widget.zipBytes != null || widget.zipFilePath != null) {
@@ -167,21 +142,11 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
 
           if (zipBytes != null) {
             final archive = ZipDecoder().decodeBytes(zipBytes);
-            print('   📦 ZIP içeriği (toplam ${archive.length} dosya):');
-
-            for (final file in archive) {
-              if (file.isFile && file.name.contains('solution')) {
-                print('      - ${file.name}');
-              }
-            }
 
             // Önce tam path ile dene
             for (final file in archive) {
               if (file.name == imagePath && file.isFile) {
                 imageBytes = file.content as Uint8List;
-                print(
-                  '   ✅ Çözüm resmi ZIP\'ten bulundu (tam eşleşme): ${file.name}',
-                );
                 break;
               }
             }
@@ -189,23 +154,13 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
             // Eğer bulunamadıysa, dosya adı ile dene
             if (imageBytes == null) {
               final imageFileName = imagePath.split('/').last;
-              print(
-                '   🔍 Tam path bulunamadı, dosya adı ile deneniyor: $imageFileName',
-              );
 
               for (final file in archive) {
                 if (file.name.endsWith(imageFileName) && file.isFile) {
                   imageBytes = file.content as Uint8List;
-                  print(
-                    '   ✅ Çözüm resmi ZIP\'ten bulundu (dosya adı eşleşmesi): ${file.name}',
-                  );
                   break;
                 }
               }
-            }
-
-            if (imageBytes == null) {
-              print('   ❌ Resim ZIP\'te bulunamadı: $imagePath');
             }
           }
         } else {
@@ -215,9 +170,6 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
 
           if (await imageFile.exists()) {
             imageBytes = await imageFile.readAsBytes();
-            print('✅ Çözüm resmi dosyadan yüklendi: $fullPath');
-          } else {
-            print('❌ Çözüm resmi dosyası bulunamadı: $fullPath');
           }
         }
 
@@ -230,18 +182,9 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
         setState(() {
           _loadedSolutionImages = loadedImages;
         });
-        print('✅ ${loadedImages.length} çözüm resmi başarıyla yüklendi');
-        print(
-          '   _loadedSolutionImages.length: ${_loadedSolutionImages.length}',
-        );
-      } else {
-        print('⚠️ Hiç resim yüklenemedi veya widget unmounted');
-        print('   loadedImages.length: ${loadedImages.length}');
-        print('   mounted: $mounted');
       }
     } catch (e) {
-      print('❌ Çözüm resimleri yükleme hatası: $e');
-      print('   Stack trace: ${StackTrace.current}');
+      // Ignore
     }
   }
 
@@ -299,9 +242,6 @@ class _SolutionDetailDialogState extends State<SolutionDetailDialog> {
 
   @override
   Widget build(BuildContext context) {
-    print(
-      '🔄 build() çağrıldı - _loadedSolutionImages.length: ${_loadedSolutionImages.length}',
-    );
     return Dialog(
       insetPadding: const EdgeInsets.all(64),
       child: Container(

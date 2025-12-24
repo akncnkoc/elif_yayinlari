@@ -124,7 +124,6 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
       // Start TOC detection
       _detectTOC();
     } catch (e) {
-      print('❌ Error loading PDF: $e');
       if (mounted) {
         setState(() => _isPdfLoading = false);
       }
@@ -145,9 +144,7 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
           _chapters = chapters;
         });
       }
-    } catch (e) {
-      print('TOC Detection error: $e');
-    }
+    } catch (e) {}
   }
 
   void _openChapterDrawer() {
@@ -245,7 +242,6 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
   Future<Uint8List?> _captureSelectedArea() async {
     final state = _drawingKey.currentState;
     if (state == null || state.selectedAreaNotifier.value == null) {
-      print('❌ Seçili alan yok');
       return null;
     }
 
@@ -286,16 +282,12 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
     _showAnalyzingDialog();
 
     try {
-      print('📸 Seçili alan capture ediliyor...');
       final imageBytes = await _captureSelectedArea();
 
       if (imageBytes == null) {
         throw Exception('Görsel alınamadı');
       }
 
-      print('✅ Seçili alan alındı: ${imageBytes.length} bytes');
-
-      print('🔍 API\'ye gönderiliyor...');
       final result = await _service.analyzeImage(imageBytes, returnImage: true);
 
       if (!mounted) return;
@@ -305,8 +297,6 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
         throw Exception(result?.error ?? 'Analiz başarısız');
       }
 
-      print('✅ Analiz tamamlandı: ${result.soruSayisi} soru bulundu');
-
       state.clearSelection();
 
       _showResultDialog(result);
@@ -315,7 +305,6 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
       Navigator.of(context).pop();
 
       _showSnackBar('❌ Hata: $e', Colors.red);
-      print('❌ Soru çözme hatası: $e');
     } finally {
       if (mounted) {
         setState(() {
@@ -752,7 +741,7 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                             }
                           },
                           onPointerPanZoomUpdate: (event) {
-                            // print('PanZoom event: ${event.panDelta}');
+                            //
                             final controller = _pdfController;
                             if (controller.isReady) {
                               final matrix = controller.value.clone();

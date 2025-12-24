@@ -30,13 +30,11 @@ class BluetoothInputHandler {
     // Önce Bluetooth mevcut mu kontrol et
     final isAvailable = await _bluetoothService.isBluetoothAvailable();
     if (!isAvailable) {
-      debugPrint('Bluetooth adapter bulunamadı');
       return false;
     }
 
     final isEnabled = await _bluetoothService.isBluetoothEnabled();
     if (!isEnabled) {
-      debugPrint('Bluetooth kapalı');
       return false;
     }
 
@@ -47,14 +45,14 @@ class BluetoothInputHandler {
     );
 
     if (!started) {
-      debugPrint('Bluetooth server başlatılamadı');
       return false;
     }
 
     // Event stream'ini dinle
-    _eventSubscription = _bluetoothService.eventStream.listen(_handleBluetoothEvent);
+    _eventSubscription = _bluetoothService.eventStream.listen(
+      _handleBluetoothEvent,
+    );
 
-    debugPrint('Bluetooth server başlatıldı: $serviceName');
     return true;
   }
 
@@ -63,19 +61,16 @@ class BluetoothInputHandler {
     await _eventSubscription?.cancel();
     _eventSubscription = null;
     await _bluetoothService.stopServer();
-    debugPrint('Bluetooth server durduruldu');
   }
 
   /// Bluetooth event'lerini işle
   void _handleBluetoothEvent(BluetoothEvent event) {
     switch (event.type) {
       case BluetoothEventType.clientConnected:
-        debugPrint('Client bağlandı: ${event.clientAddress}');
         onClientConnected?.call(event.clientAddress ?? '');
         break;
 
       case BluetoothEventType.clientDisconnected:
-        debugPrint('Client ayrıldı: ${event.clientAddress}');
         onClientDisconnected?.call(event.clientAddress ?? '');
         break;
 
@@ -84,7 +79,6 @@ class BluetoothInputHandler {
         break;
 
       case BluetoothEventType.error:
-        debugPrint('Bluetooth error: ${event.error}');
         break;
     }
   }
@@ -145,12 +139,9 @@ class BluetoothInputHandler {
           break;
 
         case RemoteInputType.unknown:
-          debugPrint('Bilinmeyen input event: $message');
           break;
       }
-    } catch (e) {
-      debugPrint('Input message parse hatası: $e');
-    }
+    } catch (e) {}
   }
 
   /// Client'lara mesaj gönder (opsiyonel - feedback için kullanılabilir)
@@ -168,13 +159,11 @@ class BluetoothInputHandler {
 class BluetoothStatusIndicator extends StatefulWidget {
   final BluetoothInputHandler handler;
 
-  const BluetoothStatusIndicator({
-    super.key,
-    required this.handler,
-  });
+  const BluetoothStatusIndicator({super.key, required this.handler});
 
   @override
-  State<BluetoothStatusIndicator> createState() => _BluetoothStatusIndicatorState();
+  State<BluetoothStatusIndicator> createState() =>
+      _BluetoothStatusIndicatorState();
 }
 
 class _BluetoothStatusIndicatorState extends State<BluetoothStatusIndicator> {
@@ -200,7 +189,9 @@ class _BluetoothStatusIndicatorState extends State<BluetoothStatusIndicator> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: _connectedClients > 0 ? Colors.green.shade400 : Colors.orange.shade400,
+        color: _connectedClients > 0
+            ? Colors.green.shade400
+            : Colors.orange.shade400,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(

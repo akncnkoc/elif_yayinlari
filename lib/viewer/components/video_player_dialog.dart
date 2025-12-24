@@ -88,7 +88,6 @@ class _VideoPlayerDialogState extends State<VideoPlayerDialog> {
 
       setState(() {});
     } catch (e) {
-      print('Video init error: $e');
       setState(() {
         _isError = true;
         _errorMessage = e.toString();
