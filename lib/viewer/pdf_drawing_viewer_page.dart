@@ -194,9 +194,19 @@ class _PdfDrawingViewerPageState extends State<PdfDrawingViewerPage> {
                   itemBuilder: (context, index) {
                     final chapter = _chapters[index];
                     return ListTile(
+                      contentPadding: EdgeInsets.only(
+                        left: 16.0 + (chapter.level * 24.0),
+                        right: 16.0,
+                      ),
+                      dense: true,
                       title: Text(
                         chapter.title,
-                        style: const TextStyle(color: Colors.white),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: chapter.level == 0
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
                       ),
                       trailing: Text(
                         '${chapter.pageNumber}',
