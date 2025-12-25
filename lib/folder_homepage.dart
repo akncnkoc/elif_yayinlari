@@ -10,6 +10,7 @@ import 'package:flutter/foundation.dart' show kIsWeb, Uint8List;
 import 'package:window_manager/window_manager.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:archive/archive.dart';
+import 'package:package_info_plus/package_info_plus.dart'; // [NEW]
 
 import './google_drive/google_drive_service.dart';
 import './google_drive/models.dart' as gdrive;
@@ -37,7 +38,9 @@ import 'widgets/update_dialog.dart'; // [NEW]
 import 'controllers/folder_home_controller.dart';
 
 class FolderHomePage extends StatefulWidget {
-  const FolderHomePage({super.key});
+  final UpdateInfo? initialUpdateInfo;
+
+  const FolderHomePage({super.key, this.initialUpdateInfo});
 
   @override
   State<FolderHomePage> createState() => _FolderHomePageState();
@@ -53,6 +56,7 @@ class _FolderHomePageState extends State<FolderHomePage> {
   List<OpenPdfTab> openTabs = [];
   int currentTabIndex = 0;
   bool isLoading = false;
+  String _appVersion = ''; // [NEW]
   bool isFullScreen = false;
   bool showFolderBrowser = false;
   bool useGoogleDrive = false;
@@ -83,11 +87,23 @@ class _FolderHomePageState extends State<FolderHomePage> {
     _loadRecentFiles();
     _startDrawingPenMonitoring();
     _startKeyboardDetection();
+    _loadVersion(); // [NEW]
     // Don't automatically load anything - let user choose storage type
 
-    // [NEW] Check for updates after UI build
+    // [NEW] Check for initial updates or schedule check
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkForUpdates();
+      if (widget.initialUpdateInfo != null) {
+        // Show immediately if passed from Splash
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) =>
+              UpdateDialog(updateInfo: widget.initialUpdateInfo!),
+        );
+      } else {
+        // Otherwise check logic (disabled for now or manual)
+        // _checkForUpdates();
+      }
     });
   }
 
@@ -102,24 +118,25 @@ class _FolderHomePageState extends State<FolderHomePage> {
     );
   }
 
-  Future<void> _checkForUpdates() async {
-    if (kIsWeb) return; // No updates for web
-
+  Future<void> _loadVersion() async {
     try {
-      final updateService = UpdateService();
-      final updateInfo = await updateService.checkForUpdates();
-
-      if (updateInfo != null) {
-        if (!mounted) return;
-
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => UpdateDialog(updateInfo: updateInfo),
-        );
-      } else {}
-    } catch (e) {}
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _appVersion = info.version;
+        });
+      }
+    } catch (e) {
+      // ignore
+    }
   }
+
+  /*
+  Future<void> _checkForUpdates() async {
+    // Logic moved to SplashScreen for initial launch
+    // Leaving this for manual checks if needed later
+  }
+  */
 
   @override
   void dispose() {
@@ -1443,7 +1460,13 @@ class _FolderHomePageState extends State<FolderHomePage> {
                   const SizedBox(width: 10),
                   Flexible(
                     child: Text(
-                      useGoogleDrive ? 'Google Drive' : 'Yerel Depo',
+                      _appVersion.isEmpty
+                          ? (useGoogleDrive
+                                ? 'TechAtlas - Google Drive'
+                                : 'TechAtlas - Yerel Depo')
+                          : (useGoogleDrive
+                                ? 'TechAtlas v$_appVersion - Google Drive'
+                                : 'TechAtlas v$_appVersion - Yerel Depo'),
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,

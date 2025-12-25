@@ -1,5 +1,5 @@
-name: remote_control_app
-description: Bluetooth remote control for Drawing Pen application
+name: tech_pen_remote
+description: Bluetooth remote control for TechPen Remote
 publish_to: 'none'
 version: 1.0.0+1
 

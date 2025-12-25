@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:universal_io/io.dart';
 import 'dart:math' as math;
 import 'folder_homepage.dart';
+import 'services/update_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -52,7 +53,17 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _startApp() async {
-    // 3 saniye bekle
+    // Check for updates concurrently with the timer
+    UpdateInfo? updateInfo;
+
+    try {
+      final updateService = UpdateService();
+      updateInfo = await updateService.checkForUpdates();
+    } catch (e) {
+      // ignore
+    }
+
+    // Ensure we wait at least 3 seconds total animation time
     await Future.delayed(const Duration(seconds: 3));
 
     if (!mounted) return;
@@ -84,7 +95,8 @@ class _SplashScreenState extends State<SplashScreen>
     // Ana sayfaya geç
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const FolderHomePage(),
+        pageBuilder: (_, __, ___) =>
+            FolderHomePage(initialUpdateInfo: updateInfo),
         transitionDuration: Duration.zero,
         reverseTransitionDuration: Duration.zero,
       ),

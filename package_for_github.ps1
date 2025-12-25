@@ -46,9 +46,9 @@ Copy-Item "$sourceDir\*" -Destination $tempDir -Recurse -Force
 
 
 # Çizim Kalemi launcher ekle
-if (Test-Path "Cizim_Kalemi_Baslat.bat") {
+if (Test-Path "TechPen.bat") {
     Write-Host "  Çizim Kalemi launcher ekleniyor..." -ForegroundColor Gray
-    Copy-Item "Cizim_Kalemi_Baslat.bat" -Destination $tempDir -Force
+    Copy-Item "TechPen.bat" -Destination $tempDir -Force
 }
 
 # ZIP oluştur

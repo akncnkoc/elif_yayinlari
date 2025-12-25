@@ -1,93 +1,93 @@
 # TechAtlas
 
-TechAtlas is a comprehensive Smart Board application developed with Flutter for Windows. It provides seamless access to educational resources, focusing on PDF book viewing, Google Drive integration, and interactive drawing capabilities.
+TechAtlas, Windows için Flutter ile geliştirilmiş kapsamlı bir Akıllı Tahta uygulamasıdır. PDF kitap görüntüleme, Google Drive entegrasyonu ve etkileşimli çizim yeteneklerine odaklanarak eğitim kaynaklarına sorunsuz erişim sağlar.
 
-## Features
+## Özellikler
 
--   **Smart PDF Viewer**:
-    -   High-performance PDF rendering.
-    -   Zoom and pan capabilities.
-    -   Support for "cropped" questions/sections (using `.book` format).
-    -   Tabbed interface for opening multiple books.
--   **Google Drive Integration**:
-    -   Browsing files and folders directly within the app.
-    -   Access Code system for secure folder access.
-    -   Service Account authentication (encrypted).
--   **Drawing Tools**:
-    -   Integrated "Drawing Pen" (Cizim Kalemi) mode.
-    -   Toggle between drawing and mouse interaction.
--   **Local Library**:
-    -   "My Books" section for downloaded content.
-    -   Recent files history.
--   **Security**:
-    -   Service account credentials are **encrypted** (`assets/service_account.enc`) and decrypted at runtime.
-    -   Plaintext keys are excluded from the codebase and builds.
+-   **Akıllı PDF Görüntüleyici**:
+    -   Yüksek performanslı PDF oluşturma.
+    -   Yakınlaştırma ve kaydırma özellikleri.
+    -   "Kırpılmış" soru/bölüm desteği (`.book` formatı kullanarak).
+    -   Birden fazla kitabı açmak için sekmeli arayüz.
+-   **Google Drive Entegrasyonu**:
+    -   Dosya ve klasörleri doğrudan uygulama içinde gezebilme.
+    -   Güvenli klasör erişimi için Erişim Kodu sistemi.
+    -   Servis Hesabı kimlik doğrulaması (şifreli).
+-   **Çizim Araçları**:
+    -   Entegre "Çizim Kalemi" modu.
+    -   Çizim ve fare etkileşimi arasında geçiş yapabilme.
+-   **Yerel Kütüphane**:
+    -   İndirilen içerikler için "Kitaplarım" bölümü.
+    -   Son açılan dosyalar geçmişi.
+-   **Güvenlik**:
+    -   Servis hesabı kimlik bilgileri **şifrelenmiştir** (`assets/service_account.enc`) ve çalışma zamanında çözülür.
+    -   Düz metin anahtarlar kod tabanından ve derlemelerden hariç tutulmuştur.
 
-## Setup & Development
+## Kurulum ve Geliştirme
 
-### Prerequisites
+### Gereksinimler
 
--   [Flutter SDK](https://flutter.dev/docs/get-started/install/windows) (Stable channel)
--   Visual Studio with C++ workload (for Windows development)
+-   [Flutter SDK](https://flutter.dev/docs/get-started/install/windows) (Kararlı kanal)
+-   Visual Studio (C++ workload ile, Windows geliştirmesi için)
 -   Dart SDK
 
-### Dependencies
+### Bağımlılıklar
 
-Install dependencies:
+Bağımlılıkları yükleyin:
 
 ```bash
 flutter pub get
 ```
 
-### Credentials
+### Kimlik Bilgileri (Credentials)
 
-The application requires Google Cloud Service Account credentials.
-These are stored in `assets/service_account.enc` (encrypted).
+Uygulama, Google Cloud Servis Hesabı kimlik bilgilerini gerektirir.
+Bunlar `assets/service_account.enc` içinde (şifreli olarak) saklanır.
 
-If you need to update the credentials:
-1.  Place the new `service_account.json` in the project root.
-2.  Run the encryption script:
+Kimlik bilgilerini güncellemeniz gerekirse:
+1.  Yeni `service_account.json` dosyasını proje kök dizinine yerleştirin.
+2.  Şifreleme betiğini çalıştırın:
     ```bash
     flutter pub run tool/encrypt_sa.dart
     ```
-3.  This will update `assets/service_account.enc`.
-4.  **Do not commit** the plaintext `service_account.json`.
+3.  Bu işlem `assets/service_account.enc` dosyasını güncelleyecektir.
+4.  Düz metin `service_account.json` dosyasını **commit etmeyin** (gitignore'a eklenmiştir).
 
-## Building for Windows
+## Windows için Derleme (Build)
 
-To create a release build:
+Release sürümü oluşturmak için:
 
 ```bash
 flutter build windows --release
 ```
 
-The output will be in `build\windows\x64\runner\Release`.
+Çıktı `build\windows\x64\runner\Release` dizininde olacaktır.
 
-## Packaging for GitHub Release
+## GitHub Release İçin Paketleme
 
-To create a distributable ZIP file (which includes the app, assets, and launcher scripts):
+Uygulamayı, varlıkları ve başlatıcı betikleri içeren dağıtılabilir bir ZIP dosyası oluşturmak için:
 
 ```powershell
 .\package_for_github.ps1
 ```
 
-This will generate `techatlas.zip` in the project root, ready for upload.
+Bu işlem proje kök dizininde yüklenmeye hazır `techatlas.zip` dosyasını oluşturacaktır.
 
-## Installer
+## Yükleyici (Installer)
 
-The project includes a custom bootstrap installer (`TechAtlas_Setup.exe`) built from `Installer_Bootstrap.cs`.
-To compile the installer:
+Proje, `Installer_Bootstrap.cs` dosyasından derlenen özel bir önyükleyici yükleyici (`TechAtlas_Setup.exe`) içerir.
+Yükleyiciyi derlemek için:
 
 ```powershell
 .\build_installer.ps1
 ```
 
-## Architecture
+## Mimari
 
--   **Frontend**: Flutter (Material Design 3)
--   **State Management**: `setState` & simple local state (planned migration to Provider/Riverpod if complexity grows).
--   **Storage**:
-    -   `shared_preferences` for settings.
-    -   Local file system for downloaded books.
-    -   Google Drive API for cloud content.
--   **Windows Integration**: `window_manager` for window control, fullscreen, and always-on-top behaviors.
+-   **Önyüz**: Flutter (Material Design 3)
+-   **Durum Yönetimi**: `setState` ve basit yerel durum (karmaşıklık artarsa Provider/Riverpod'a geçiş planlanıyor).
+-   **Depolama**:
+    -   Ayarlar için `shared_preferences`.
+    -   İndirilen kitaplar için yerel dosya sistemi.
+    -   Bulut içeriği için Google Drive API.
+-   **Windows Entegrasyonu**: Pencere kontrolü, tam ekran ve her zaman üstte (always-on-top) davranışları için `window_manager`.

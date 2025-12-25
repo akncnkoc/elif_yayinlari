@@ -15,7 +15,7 @@ class RemoteControlApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Drawing Pen Remote',
+      title: 'TechPenRemote',
       theme: ThemeData(
         useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
@@ -211,13 +211,13 @@ class _BluetoothConnectionPageState extends State<BluetoothConnectionPage> {
             child: Column(
               children: [
                 const Text(
-                  'Bilgisayarınızdaki Drawing Pen uygulamasına bağlanın',
+                  'Bilgisayarınızdaki TechPen uygulamasına bağlanın',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 16),
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  '"Drawing Pen Remote" veya bilgisayar adını arayın',
+                  '"TechPen" veya bilgisayar adını arayın',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 12, color: Colors.white70),
                 ),
